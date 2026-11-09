@@ -1,0 +1,33 @@
+{
+  "status": {
+    "version": "0.102.0",
+    "pid": 4242,
+    "uptime_seconds": 3600,
+    "signed_in": true,
+    "https": { "port": 8443, "listening": true },
+    "ca": { "exists": true, "trusted": true, "not_after": "2028-11-09T00:00:00Z", "suffixes": ["reoclo.localhost"] },
+    "hosts": { "installed": true, "entries": 2, "relay": { "enabled": false, "listening": false } }
+  },
+  "host_entries": [
+    { "hostname": "grafana.prod-1.reoclo.localhost", "source": "grafana" },
+    { "hostname": "db.prod-1.reoclo.localhost", "source": "postgres" }
+  ],
+  "tunnels": [
+    { "name": "grafana", "org": "demo", "server": "prod-1", "server_id": "server-1", "kind": "https", "state": "active", "message": "Session open", "action": "None", "enabled": true, "target": "127.0.0.1:3000", "hostname": "grafana.prod-1.reoclo.localhost", "url": "https://grafana.prod-1.reoclo.localhost:8443", "via": "reoclo", "traffic": { "bytes_in": 2457600, "bytes_out": 102400, "streams": 3 } },
+    { "name": "postgres", "org": "demo", "server": "prod-1", "server_id": "server-1", "kind": "tcp", "state": "ready", "message": "Listening, no session open", "action": "None", "enabled": true, "target": "127.0.0.1:5432", "endpoint": "127.0.0.1:15432", "local_port": 15432, "via": "reoclo", "traffic": { "bytes_in": 0, "bytes_out": 0, "streams": 0 } },
+    { "name": "redis", "org": "demo", "server": "staging-1", "server_id": "server-2", "kind": "tcp", "state": "down", "message": "Tunnel is down", "action": "Bring the tunnel up", "enabled": false, "target": "127.0.0.1:6379", "endpoint": "127.0.0.1:16379", "local_port": 16379, "via": "reoclo", "traffic": { "bytes_in": 0, "bytes_out": 0, "streams": 0 } }
+  ],
+  "approvals": [
+    { "id": "approval-1", "agent": "Local coding agent", "action": "save_tunnel", "description": "Add api.prod-1.reoclo.localhost for port 8080", "status": "pending", "expires_at": "2026-11-09T08:10:00Z" }
+  ],
+  "orgs": [{ "id": "demo", "slug": "demo", "name": "Demo infrastructure" }],
+  "servers": [
+    { "id": "server-1", "name": "Production", "slug": "prod-1", "connection_type": "runner", "status": "online" },
+    { "id": "server-2", "name": "Staging", "slug": "staging-1", "connection_type": "runner", "status": "online" }
+  ],
+  "ports": [
+    { "port": 3000, "protocol": "tcp", "bind_address": "127.0.0.1", "process": "grafana" },
+    { "port": 5432, "protocol": "tcp", "bind_address": "127.0.0.1", "process": "postgres" },
+    { "port": 8080, "protocol": "tcp", "bind_address": "0.0.0.0", "process": "api" }
+  ]
+}
