@@ -21,7 +21,7 @@ cargo run --bin reoclo-desktop -- \
 ```
 
 Screens: `tunnels`, `add`, `edit`, `hosts`, `certificates`, `settings`, `panel`.
-Data states: `loaded`, `loading`, `empty`, `offline`, `signed-out`, `device-code`, `error`.
+Data states: `loaded`, `loading`, `empty`, `terminal`, `offline`, `signed-out`, `device-code`, `error`.
 Tunnel-state fixtures accept the daemon's twelve state names. `--reduced-motion` forces reduced motion for evidence.
 
 For an explicit fake socket, run the standalone peer with its socket path as the first argument. It prints `READY` after binding; send `quit` on stdin to stop it. Then pass `--socket /path/to/socket` to the app. `--demo` is the safe way to exercise system-action buttons as well, because it injects the fake runner.
@@ -50,6 +50,8 @@ The snapshot script captures every screen and required data state in both themes
 Tests use real Unix sockets and explicit subscriber signals with bounded timeouts. Rune interaction tests advance its virtual clock. They never use sleeps to synchronize.
 
 The packaging script requires the CLI binary as an input. It creates `dist/Reoclo.app`, signs the copied CLI and app ad hoc, verifies the signature, and creates `dist/Reoclo.dmg`. It neither installs nor launches the app. `hdiutil` may emit a deprecation warning on newer macOS releases.
+
+The DMG window is built with `dmgbuild` through `uvx`, so `uv` must be installed. Its background comes from `assets/dmg/background.html`; the PNGs beside it are screenshots of that page at 1320x840 and 660x420.
 
 The CLI included in the initial local artifact is a **development snapshot**, compiled from the phase-two/three CLI worktree on November 9, 2026. Replace it with the matching release binary when distributing the app. The script does not fetch or silently substitute a CLI.
 

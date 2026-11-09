@@ -27,6 +27,16 @@ pub(super) fn route(f: &mut Fixture, method: &str, path: &str, input: Value) -> 
             );
         }
         ("GET", "/v1/tunnels") => return (200, json!({"tunnels":f.tunnels}), None),
+        ("GET", "/v1/foreground") => return (200, json!({"tunnels":f.foreground}), None),
+        ("POST", path) if path.starts_with("/v1/foreground/") => {
+            let id = path.split('/').nth(3).unwrap_or_default();
+            f.foreground.retain(|t| t.id != id);
+            return (
+                200,
+                json!({"ok":true}),
+                event("foreground", &json!({"tunnels":f.foreground})),
+            );
+        }
         ("GET", "/v1/orgs") => return (200, json!({"orgs":f.orgs}), None),
         ("GET", "/v1/approvals") => return (200, json!({"approvals":f.approvals}), None),
         ("GET", "/v1/approvals?all=true") => {
@@ -68,10 +78,31 @@ pub(super) fn route(f: &mut Fixture, method: &str, path: &str, input: Value) -> 
         ("POST", "/v1/ca/trust" | "/v1/ca/untrust") => {
             if let Some(ca) = &mut f.status.ca {
                 ca.trusted = path.ends_with("/trust");
+                let domains = input
+                    .get("domains")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                for domain in domains.iter().filter_map(Value::as_str) {
+                    if !ca.suffixes.iter().any(|s| s == domain) {
+                        ca.suffixes.push(domain.into());
+                    }
+                }
             }
             return (200, json!({"ok":true}), None);
         }
         ("POST", "/v1/tunnels") => {
+            // The real daemon's schema requires it.
+            if input
+                .get("tenant_id")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+            {
+                return fail(
+                    400,
+                    "invalid: tenant_id: Invalid input: expected string, received undefined",
+                );
+            }
             let Ok(mut tunnel) = serde_json::from_value::<TunnelView>(input) else {
                 return fail(400, "Invalid tunnel");
             };

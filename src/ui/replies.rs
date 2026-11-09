@@ -4,6 +4,11 @@ use serde_json::Value;
 
 impl State {
     pub fn receive(&mut self, request: &Request, response: Result<Value, Fault>) {
+        self.apply_response(request, response);
+        self.sync_tray();
+    }
+
+    fn apply_response(&mut self, request: &Request, response: Result<Value, Fault>) {
         self.busy = false;
         match response {
             Ok(value) => {
@@ -12,6 +17,8 @@ impl State {
                     self.phase = ViewState::Error;
                 }
             }
+            // A daemon older than this feature has no such route, and nothing to report.
+            Err(Fault::Error(_)) if request.path == "/v1/foreground" => {}
             Err(fault) => {
                 self.error = Some(match fault {
                     Fault::Offline(message) => {
@@ -38,8 +45,28 @@ impl State {
     fn accept(&mut self, request: &Request, value: Value) -> Result<(), serde_json::Error> {
         match (request.method.as_str(), request.path.as_str()) {
             ("GET", "/v1/status") => self.model.status = serde_json::from_value(value)?,
-            ("GET", "/v1/hosts") => {
+            ("GET", "/v1/foreground") => {
+                self.model.foreground = serde_json::from_value::<ForegroundList>(value)?.tunnels;
+            }
+            ("POST", path) if path.starts_with("/v1/foreground/") => {
+                let id = path.split('/').nth(3).unwrap_or_default();
+                self.model.foreground.retain(|t| t.id != id);
+                self.modal = None;
+                self.stop_target = None;
+                self.notice = Some("Tunnel stopped.".into());
+            }
+            ("GET", "/v1/hosts") | ("POST", "/v1/hosts/sync") => {
                 let hosts: HostsList = serde_json::from_value(value)?;
+                if std::mem::take(&mut self.awaiting_helper) {
+                    if hosts.helper.installed {
+                        self.notice = Some("Hosts helper installed.".into());
+                    } else {
+                        self.error = Some(
+                            "macOS finished the install, but the helper is not answering. See /var/log/reoclo-hostsd.log."
+                                .into(),
+                        );
+                    }
+                }
                 self.model.host_entries = hosts.entries;
                 self.model.status.hosts = Some(hosts.helper);
             }
@@ -80,8 +107,37 @@ impl State {
                 self.idle = rune::TextEdit::new(self.settings.idle_timeout_seconds.to_string());
                 self.https_port = rune::TextEdit::new(self.settings.https_port.to_string());
                 self.approvals_required = self.settings.agent_approvals == "required";
-                if request.method == "PATCH" {
-                    self.notice = Some("Daemon settings saved.".into());
+                if request.method == "PATCH"
+                    && request
+                        .body
+                        .as_ref()
+                        .is_some_and(|b| b.get("ca_suffixes").is_some())
+                {
+                    // The CA's constraint is fixed when it is issued, so trust issues one without the removed suffix.
+                    if self.modal.as_deref() == Some("remove-suffix") {
+                        self.modal = None;
+                    }
+                    self.reissuing = true;
+                    self.request("POST", "/v1/ca/trust", None);
+                    self.notice = Some(
+                        "Domain removed. Approve the password prompt to trust the new CA.".into(),
+                    );
+                } else if request.method == "PATCH" {
+                    let hosts = request
+                        .body
+                        .as_ref()
+                        .is_some_and(|b| b.get("manual_hosts").is_some());
+                    if hosts {
+                        self.new_host = rune::TextEdit::new("");
+                    }
+                    self.notice = Some(
+                        if hosts {
+                            "Hostnames updated."
+                        } else {
+                            "Daemon settings saved."
+                        }
+                        .into(),
+                    );
                 }
             }
             ("POST", "/v1/auth/login") => {
@@ -97,6 +153,14 @@ impl State {
             }
             ("GET", path) if path.ends_with("/servers") => {
                 self.servers = serde_json::from_value::<ServerList>(value)?.servers;
+                if let Some(wanted) = self.pending_server.take()
+                    && let Some(found) = self
+                        .servers
+                        .iter()
+                        .find(|o| o.id == wanted || o.slug == wanted || o.name == wanted)
+                {
+                    self.server = found.id.clone();
+                }
             }
             ("GET", path) if path.ends_with("/ports") => {
                 self.ports = serde_json::from_value::<PortList>(value)?.ports
@@ -130,6 +194,27 @@ impl State {
                 self.model.tunnels.push(tunnel);
                 self.model.sort();
                 self.modal = None;
+            }
+            ("POST", "/v1/ca/trust") => {
+                let domain = request
+                    .body
+                    .as_ref()
+                    .is_some_and(|b| b.get("domains").is_some());
+                self.notice = Some(
+                    if std::mem::take(&mut self.reissuing) {
+                        "Domain removed and the new CA trusted."
+                    } else if domain {
+                        "Domain trusted."
+                    } else {
+                        "Local CA trusted."
+                    }
+                    .into(),
+                );
+                self.trust_domain = rune::TextEdit::new("");
+                // Trusting from the Add tunnel form keeps the form open so it can be saved.
+                if self.modal.as_deref() == Some("trust") {
+                    self.modal = None;
+                }
             }
             _ => {
                 self.notice = Some("Change applied.".into());

@@ -1,7 +1,4 @@
-use super::{
-    Page, State,
-    primitives::{description, title},
-};
+use super::{Page, State, primitives::title};
 use crate::theme::*;
 use rune::{El, col, el, row, text};
 use rune_kit::Kit;
@@ -40,17 +37,17 @@ pub fn view(s: &State, k: &Kit) -> El {
         .w_full()
         .padding(XL)
         .gap(XL)
-        .child(title(s.page.name(), description(s.page), k));
+        .child(title(s.page.name(), None, k));
     let layout = match s.page {
         Page::Tunnels => col()
-            .gap(LG)
+            .gap(XL)
             .child(
                 col()
-                    .h(224.0)
-                    .gap(SM)
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL)),
+                    .gap(XS)
+                    .child(bar(k, 28.0))
+                    .child(bar(k, 32.0))
+                    .child(bar(k, 32.0))
+                    .child(bar(k, 32.0)),
             )
             .child(bar(k, RULE))
             .child(bar(k, XL))

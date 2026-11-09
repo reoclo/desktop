@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Source of the DMG window background. background.png (660x420) and
+     background@2x.png are screenshots of this page at 1320x840. -->
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Mona Sans"; src: url("../fonts/MonaSans.ttf"); font-weight: 200 900; }
+  html, body { margin: 0; width: 1320px; height: 840px; overflow: hidden; background: #f7f7ec; }
+  .map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 100%; transform: scale(1.5); transform-origin: 88% 80%; }
+  .veil { position: absolute; inset: 0; background: rgba(247, 247, 236, 0.42); }
+  svg { position: absolute; inset: 0; width: 1320px; height: 840px; font-family: "Mona Sans", sans-serif; }
+</style>
+<img class="map" src="map-sheet.webp" alt="">
+<div class="veil"></div>
+<svg viewBox="0 0 660 420" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(22 22)">
+    <rect width="122" height="40" rx="5" fill="#f7f7ec" stroke="#2c86b5" stroke-width="1.2"/>
+    <path transform="translate(13 9.5) scale(0.42)" d="M22.5 0 45 12.5v25L22.5 50 0 37.5v-25Z" fill="#0a0a09"/>
+    <text x="40" y="27.5" font-size="20" font-weight="800" fill="#0a0a09" letter-spacing="-0.2">Reoclo</text>
+  </g>
+  <path d="M272 178 C 305 150, 355 206, 384 178" fill="none" stroke="#d11472" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="11 10"/>
+  <path d="M377 166 L392 175 L381 189" fill="none" stroke="#d11472" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <g transform="translate(330 318)">
+    <rect x="-132" y="-19" width="264" height="38" rx="5" fill="#f7f7ec" stroke="#2c86b5" stroke-width="1.2"/>
+    <text text-anchor="middle" y="6" font-size="16" font-weight="650" fill="#0a0a09">Drag Reoclo to Applications</text>
+  </g>
+</svg>

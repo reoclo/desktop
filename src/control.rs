@@ -45,7 +45,9 @@ impl Client {
             return Err(Error::Protocol("Invalid request path or method".into()));
         }
         let mut stream = UnixStream::connect(&self.path)?;
-        stream.set_read_timeout(Some(Duration::from_secs(15)))?;
+        // Trusting the CA waits on the person at the macOS password prompt.
+        let wait = if path.starts_with("/v1/ca/") { 300 } else { 15 };
+        stream.set_read_timeout(Some(Duration::from_secs(wait)))?;
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
         let payload = body
             .map(serde_json::to_vec)

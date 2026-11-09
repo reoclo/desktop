@@ -4,10 +4,13 @@ use reoclo_desktop::{
     fake::FakeDaemon,
     system::{FakeRunner, MacRunner, SystemRunner},
     theme, tray,
-    ui::{Page, State, view},
+    ui::{Page, State, ViewState, view},
 };
-use rune::{App, AppSpec, Key, KeyEvent, Tx, WindowOptions, WindowSpec};
+use rune::{App, AppSpec, Key, KeyEvent, Titlebar, Tx, WindowOptions, WindowSpec};
 use std::path::PathBuf;
+
+/// The toolbar's height, so macOS centers the window controls on the sidebar toggle.
+const TITLEBAR: Titlebar = Titlebar::new(48.0);
 
 fn spec() -> AppSpec<State> {
     AppSpec {
@@ -15,6 +18,7 @@ fn spec() -> AppSpec<State> {
         families: ("Figtree", "JetBrains Mono"),
         min_size: Some((760.0, 620.0)),
         on_key: Some(keys),
+        poll: Some(State::expire_notice),
         ..AppSpec::new("Reoclo", (1100.0, 760.0), State::default, view)
     }
 }
@@ -23,6 +27,14 @@ fn keys(s: &mut State, event: &KeyEvent, tx: &mut Tx) -> bool {
     match event.key {
         Key::Command('q') => tx.quit(),
         Key::Command(',') => s.page = Page::Settings,
+        Key::Command('n')
+            if s.modal.is_none() && matches!(s.phase, ViewState::Loaded | ViewState::Empty) =>
+        {
+            s.begin_add()
+        }
+        Key::Command(digit @ '1'..='4') if s.modal.is_none() => {
+            s.show_page(Page::ALL[digit as usize - '1' as usize]);
+        }
         Key::Command('w') => tx.close_window(),
         _ => return false,
     }
@@ -57,7 +69,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spec.size = (340.0, 620.0);
             spec.min_size = Some(spec.size);
         }
-        App::new(spec).init(move || state).args(args).run();
+        let app = App::new(spec).init(move || state).args(args);
+        if screen == "panel" {
+            app.run();
+        } else {
+            app.titlebar(TITLEBAR).run();
+        }
         return Ok(());
     }
     let home = PathBuf::from(std::env::var("HOME")?);
@@ -83,9 +100,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let executable = std::env::current_exe()?;
     let launch_agent = home.join("Library/LaunchAgents/com.reoclo.desktop.plist");
     let login_enabled = if demo { false } else { launch_agent.exists() };
+    if login_enabled
+        && executable
+            .to_string_lossy()
+            .contains(".app/Contents/MacOS/")
+    {
+        // A login item from an older build can point at an executable since renamed.
+        let current = reoclo_desktop::system::launch_agent(&executable.to_string_lossy());
+        if std::fs::read_to_string(&launch_agent).ok().as_deref() != Some(current.as_str()) {
+            std::fs::write(&launch_agent, current)?;
+        }
+    }
+    let preferences_path =
+        (!demo).then(|| home.join("Library/Application Support/Reoclo/preferences.json"));
+    let preferences = preferences_path
+        .as_deref()
+        .map(reoclo_desktop::ui::read_preferences)
+        .unwrap_or_default();
     let mut app = App::new(spec())
+        .titlebar(TITLEBAR)
         .init(move || State {
             start_at_login: login_enabled,
+            menu_bar: preferences.menu_bar,
+            preferences_path,
             ..State::default()
         })
         .args(args)

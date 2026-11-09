@@ -1,78 +1,59 @@
-use super::{State, ViewState, primitives::*};
-use crate::{control::segment, theme::*};
+use super::{State, primitives::*};
+use crate::{control::segment, model::TunnelState, theme::*};
 use rune::{El, ScrollSpec, col, el, row, text};
-use rune_kit::{Button, ButtonVariant, Kit, Switch};
+use rune_kit::{Button, IconButton, IconButtonVariant, Kit, Switch, glyphs};
 
 pub fn view(s: &State, k: &Kit) -> El {
-    let header = row()
+    let mut header = row()
         .w_full()
-        .padding(LG)
+        .px(LG)
+        .py(MD)
+        .gap(SM)
         .center_y()
-        .child(text("Reoclo").font(HEADING).color(k.c.text_base).grow(1.0));
-    let mut list = col().w_full().padding(LG).gap(XL);
-    if s.phase == ViewState::Loaded {
-        if !s.model.approvals.is_empty() {
-            list = list.child(
-                text(format!(
-                    "{} pending approval{}",
-                    s.model.approvals.len(),
-                    if s.model.approvals.len() == 1 {
-                        ""
-                    } else {
-                        "s"
-                    }
-                ))
-                .font(LABEL)
-                .color(k.c.warning.fg),
-            );
-            for approval in &s.model.approvals {
-                let approve = format!("/v1/approvals/{}/approve", segment(&approval.id));
-                let deny = format!("/v1/approvals/{}/deny", segment(&approval.id));
-                list = list.child(
-                    col()
-                        .gap(SM)
-                        .child(text(&approval.agent).font(BODY).color(k.c.text_base).wrap())
-                        .child(
-                            text(&approval.description)
-                                .font(BODY)
-                                .color(k.c.text_muted)
-                                .wrap(),
-                        )
-                        .child(
-                            row()
-                                .gap(SM)
-                                .child(
-                                    Button::new("Approve")
-                                        .variant(ButtonVariant::Contrast)
-                                        .disabled(s.busy)
-                                        .on_press(move |s: &mut State| {
-                                            s.request("POST", &approve, None)
-                                        })
-                                        .build(k)
-                                        .key(format!("approve-{}", approval.id)),
-                                )
-                                .child(
-                                    Button::new("Deny")
-                                        .disabled(s.busy)
-                                        .on_press(move |s: &mut State| {
-                                            s.request("POST", &deny, None)
-                                        })
-                                        .build(k)
-                                        .px(0.0)
-                                        .mr(MD)
-                                        .key(format!("deny-{}", approval.id)),
-                                ),
-                        ),
-                );
-            }
-            list = list.child(el().h(RULE).w_full().fill(k.c.border_base));
+        .child(wordmark(k).grow(1.0));
+    if s.has_tunnels() {
+        let active = s
+            .model
+            .tunnels
+            .iter()
+            .filter(|t| t.state == TunnelState::Active)
+            .count()
+            + s.model
+                .foreground
+                .iter()
+                .filter(|t| t.state == TunnelState::Active)
+                .count();
+        header = header.child(
+            text(format!("{active} active"))
+                .font(HINT)
+                .color(k.c.text_muted),
+        );
+    }
+    let mut list = col().w_full().padding(LG).gap(LG);
+    if s.has_tunnels() {
+        if let Some(requests) = approvals(s, k) {
+            list = list
+                .child(requests)
+                .child(el().h(RULE).w_full().fill(k.c.border_base));
+        }
+        if let Some(running) = terminal_tunnels(s, k) {
+            list = list.child(running);
         }
         for ((org, server), tunnels) in s.model.groups() {
-            list = list.child(
-                col()
-                    .gap(XS)
-                    .child(text(server).font(HEADING).color(k.c.text_base))
-                    .child(text(org).font(LABEL).color(k.c.text_muted)),
+            let mut group = col().w_full().gap(MD).child(
+                row()
+                    .gap(SM)
+                    .center_y()
+                    .child(
+                        text(if server.is_empty() {
+                            "This Mac"
+                        } else {
+                            server
+                        })
+                        .font(LABEL)
+                        .color(k.c.text_base),
+                    )
+                    .child(text(org).font(HINT).color(k.c.text_muted)),
             );
             for tunnel in tunnels {
                 let path = format!(
@@ -81,16 +62,60 @@ pub fn view(s: &State, k: &Kit) -> El {
                     if tunnel.enabled { "down" } else { "up" }
                 );
                 let copy = tunnel.endpoint().to_owned();
-                let url = tunnel.url.clone();
+                // Copy is last so it keeps its column on rows without a URL.
+                let mut controls = row().gap(XS).center_y();
+                if let Some(url) = tunnel.url.clone() {
+                    controls = controls.child(
+                        IconButton::new(&glyphs::ARROW_RIGHT)
+                            .variant(IconButtonVariant::GhostMuted)
+                            .label("Open in browser")
+                            .on_press_tx(move |s: &mut State, tx| {
+                                if let Err(error) = tx.open_url(&url) {
+                                    s.error = Some(error.to_string());
+                                }
+                            })
+                            .build(k)
+                            .key(format!("open-{}", tunnel.name)),
+                    );
+                }
+                let controls = controls.child(
+                    IconButton::new(&glyphs::COPY)
+                        .variant(IconButtonVariant::GhostMuted)
+                        .label(if tunnel.url.is_some() {
+                            "Copy URL"
+                        } else {
+                            "Copy endpoint"
+                        })
+                        .on_press_tx(move |s: &mut State, tx| {
+                            tx.copy(&copy);
+                            s.notice = Some("Endpoint copied.".into());
+                        })
+                        .build(k)
+                        .key(format!("copy-{}", tunnel.name)),
+                );
+                // The open action already says this is a web address, so the
+                // scheme can give its width to the hostname and port.
+                let endpoint = tunnel.endpoint();
+                let shown = endpoint.strip_prefix("https://").unwrap_or(endpoint);
                 let mut item = col()
-                    .gap(SM)
                     .w_full()
+                    .gap(XS)
                     .child(
                         row()
                             .w_full()
                             .gap(SM)
                             .center_y()
-                            .child(text(&tunnel.name).font(BODY).color(k.c.text_base).grow(1.0))
+                            .child(
+                                text(&tunnel.name)
+                                    .font(BODY)
+                                    .color(k.c.text_base)
+                                    .truncate()
+                                    .help_when_truncated(&tunnel.name)
+                                    .grow(1.0)
+                                    .min_w(0.0),
+                            )
+                            .child(status(tunnel.state, k))
+                            .child(controls)
                             .child(
                                 Switch::new(tunnel.enabled)
                                     .label(format!("{} tunnel up", tunnel.name))
@@ -101,68 +126,25 @@ pub fn view(s: &State, k: &Kit) -> El {
                                     .key(format!("toggle-{}", tunnel.name)),
                             ),
                     )
-                    .child(status(tunnel.state, k))
                     .child(
-                        text(tunnel.endpoint())
+                        text(shown)
                             .font(MONO)
                             .color(k.c.text_muted)
-                            .wrap()
-                            .selectable(true),
-                    )
-                    .child(
-                        row()
-                            .gap(SM)
-                            .child(
-                                Button::new(if tunnel.url.is_some() {
-                                    "Copy URL"
-                                } else {
-                                    "Copy endpoint"
-                                })
-                                .on_press_tx(move |s: &mut State, tx| {
-                                    tx.copy(&copy);
-                                    s.notice = Some("Endpoint copied.".into());
-                                })
-                                .build(k)
-                                .px(0.0)
-                                .mr(MD)
-                                .key(format!("copy-{}", tunnel.name)),
-                            )
-                            .child(
-                                Button::new("Open")
-                                    .disabled(url.is_none())
-                                    .on_press_tx(move |s: &mut State, tx| {
-                                        if let Some(url) = &url
-                                            && let Err(error) = tx.open_url(url)
-                                        {
-                                            s.error = Some(error.to_string());
-                                        }
-                                    })
-                                    .build(k)
-                                    .key(format!("open-{}", tunnel.name)),
-                            ),
+                            .truncate()
+                            .selectable(true)
+                            .help_when_truncated(endpoint)
+                            .w_full()
+                            .min_w(0.0),
                     );
                 if tunnel.share.as_ref().is_some_and(|share| share.tailnet) {
-                    item = item.child(text("Shared with tailnet").font(LABEL).color(k.c.info.fg));
+                    item = item.child(indicator(Tone::Info, "Shared with tailnet", k));
                 }
-                list = list.child(item);
+                group = group.child(item);
             }
+            list = list.child(group);
         }
     } else {
         list = col().w_full().child(data_state(s, k));
-    }
-    let message = if s.phase == ViewState::Loaded {
-        s.error.as_ref().or(s.notice.as_ref())
-    } else {
-        s.notice.as_ref()
-    };
-    if let Some(message) = message {
-        list = list.child(
-            text(message)
-                .role("status")
-                .font(BODY)
-                .color(k.c.text_base)
-                .wrap(),
-        );
     }
     let viewport = col()
         .key("panel-scroll")
@@ -179,7 +161,6 @@ pub fn view(s: &State, k: &Kit) -> El {
         .padding(LG)
         .child(
             Button::new("Open Reoclo")
-                .variant(ButtonVariant::Contrast)
                 .on_press_tx(|s: &mut State, tx| {
                     if let Some(handle) = &s.window_handle {
                         handle.set_dock_icon(true);
@@ -187,16 +168,17 @@ pub fn view(s: &State, k: &Kit) -> El {
                         tx.close_window();
                     }
                 })
-                .build(k)
+                .primary(k)
                 .key("open-reoclo"),
         )
+        .child(spacer())
         .child(
             Button::new("Quit")
                 .on_press_tx(|_: &mut State, tx| tx.quit())
-                .build(k)
+                .secondary(k)
                 .key("quit"),
         );
-    col()
+    let mut panel = col()
         .key("menu-panel")
         .w_full()
         .h_full()
@@ -204,7 +186,29 @@ pub fn view(s: &State, k: &Kit) -> El {
         .border(RULE, k.c.border_base)
         .child(header)
         .child(el().h(RULE).w_full().fill(k.c.border_base))
-        .child(k.scroll_bar(viewport))
+        .child(k.scroll_bar(viewport));
+    let error = if s.has_tunnels() && s.modal.is_none() {
+        s.error.as_deref()
+    } else {
+        None
+    };
+    if let Some(error) = error {
+        panel = panel
+            .child(el().h(RULE).w_full().fill(k.c.border_base))
+            .child(alert(error, k).padding(MD));
+    } else if let Some(notice) = &s.notice {
+        panel = panel
+            .child(el().h(RULE).w_full().fill(k.c.border_base))
+            .child(
+                text(notice)
+                    .role("status")
+                    .font(HINT)
+                    .color(k.c.text_muted)
+                    .wrap()
+                    .padding(MD),
+            );
+    }
+    panel
         .child(el().h(RULE).w_full().fill(k.c.border_base))
         .child(footer)
 }

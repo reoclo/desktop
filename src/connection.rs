@@ -26,6 +26,7 @@ fn refresh(client: &Client, handles: &[AppHandle<State>]) {
     for path in [
         "/v1/status",
         "/v1/tunnels",
+        "/v1/foreground",
         "/v1/orgs",
         "/v1/approvals",
         "/v1/settings",
@@ -105,18 +106,7 @@ impl Connection {
                                                     _ => {}
                                                 }
                                             }
-                                            if let Some(tray) = &s.tray {
-                                                tray.set_title(Some(
-                                                    if s.model.approvals.is_empty() {
-                                                        "Reoclo".into()
-                                                    } else {
-                                                        format!(
-                                                            "Reoclo ({})",
-                                                            s.model.approvals.len()
-                                                        )
-                                                    },
-                                                ));
-                                            }
+                                            s.sync_tray();
                                         });
                                     }
                                     if event.name == "auth" {

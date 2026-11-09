@@ -18,12 +18,18 @@ pub fn start(
                     s.busy = false;
                     match result {
                         Ok(message) => {
-                            s.notice = Some(message);
                             s.modal = None;
                             if let SystemAction::StartAtLogin(enabled) = action {
                                 s.start_at_login = enabled;
                             }
-                            s.request("GET", "/v1/status", None);
+                            if matches!(action, SystemAction::SetupHosts(_)) {
+                                // The helper's own answer decides what the app reports.
+                                s.request("POST", "/v1/hosts/sync", None);
+                                s.awaiting_helper = true;
+                            } else {
+                                s.request("GET", "/v1/status", None);
+                                s.notice = Some(message);
+                            }
                         }
                         Err(message) => s.error = Some(message),
                     }

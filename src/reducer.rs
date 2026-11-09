@@ -1,4 +1,7 @@
-use crate::model::{Approval, AuthEvent, HostEntry, Status, TunnelTraffic, TunnelView};
+use crate::model::{
+    Approval, AuthEvent, ForegroundList, ForegroundTunnel, HostEntry, Status, TunnelTraffic,
+    TunnelView,
+};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -6,6 +9,7 @@ use std::collections::BTreeMap;
 pub struct Model {
     pub status: Status,
     pub tunnels: Vec<TunnelView>,
+    pub foreground: Vec<ForegroundTunnel>,
     pub approvals: Vec<Approval>,
     pub host_entries: Vec<HostEntry>,
     pub auth: AuthEvent,
@@ -51,6 +55,7 @@ impl Model {
                     }
                 }
             }
+            "foreground" => self.foreground = serde_json::from_str::<ForegroundList>(data)?.tunnels,
             "auth" => self.auth = serde_json::from_str(data)?,
             "approvals" | "approval" => {
                 #[derive(Deserialize)]

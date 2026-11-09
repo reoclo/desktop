@@ -75,12 +75,88 @@ pub struct TunnelView {
 }
 
 impl TunnelView {
+    /// Where the tunnel goes: its server, or this Mac for a local route.
+    pub fn place(&self) -> &str {
+        if self.kind == "local" || self.server.is_empty() {
+            "This Mac"
+        } else {
+            &self.server
+        }
+    }
+
     pub fn endpoint(&self) -> &str {
         self.url
             .as_deref()
             .or(self.endpoint.as_deref())
             .unwrap_or("Not listening")
     }
+}
+
+/// What the menu bar item shows.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum MenuBarStyle {
+    #[default]
+    Icon,
+    IconAndName,
+    IconAndCount,
+    IconAndMeter,
+}
+
+impl MenuBarStyle {
+    pub const ALL: [Self; 4] = [
+        Self::Icon,
+        Self::IconAndName,
+        Self::IconAndCount,
+        Self::IconAndMeter,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Icon => "Icon",
+            Self::IconAndName => "Icon and name",
+            Self::IconAndCount => "Icon and count",
+            Self::IconAndMeter => "Icon and meter",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|style| style.label() == label)
+    }
+}
+
+/// Choices that belong to this Mac's app rather than the daemon.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct Preferences {
+    pub menu_bar: MenuBarStyle,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ForegroundForward {
+    pub kind: String,
+    pub proto: String,
+    pub listen: String,
+    pub target: String,
+}
+
+/// A tunnel running in a terminal, reported by the daemon.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct ForegroundTunnel {
+    pub id: String,
+    pub pid: u32,
+    pub org: String,
+    pub server: String,
+    pub state: TunnelState,
+    pub started_at: String,
+    pub forwards: Vec<ForegroundForward>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct ForegroundList {
+    pub tunnels: Vec<ForegroundTunnel>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -120,6 +196,8 @@ pub struct Https {
 pub struct Ca {
     pub exists: bool,
     pub trusted: bool,
+    /// The allowed suffixes changed since this CA was issued; trusting issues a new one.
+    pub stale: bool,
     pub not_after: Option<String>,
     pub suffixes: Vec<String>,
 }
@@ -128,6 +206,7 @@ pub struct Ca {
 #[serde(default)]
 pub struct Hosts {
     pub installed: bool,
+    pub suffixes: Vec<String>,
     pub entries: usize,
     pub relay: Relay,
     pub error: Option<String>,
@@ -159,6 +238,8 @@ pub struct Settings {
     pub idle_timeout_seconds: u32,
     pub https_port: u16,
     pub agent_approvals: String,
+    pub ca_suffixes: Vec<String>,
+    pub manual_hosts: Vec<String>,
 }
 
 impl Default for Settings {
@@ -167,6 +248,8 @@ impl Default for Settings {
             idle_timeout_seconds: 600,
             https_port: 8443,
             agent_approvals: "required".into(),
+            ca_suffixes: Vec::new(),
+            manual_hosts: Vec::new(),
         }
     }
 }

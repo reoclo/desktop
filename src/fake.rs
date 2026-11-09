@@ -16,6 +16,8 @@ pub struct Fixture {
     pub status: Status,
     pub host_entries: Vec<HostEntry>,
     pub tunnels: Vec<TunnelView>,
+    #[serde(default)]
+    pub foreground: Vec<ForegroundTunnel>,
     pub approvals: Vec<Approval>,
     #[serde(default)]
     pub approval_history: Vec<Approval>,

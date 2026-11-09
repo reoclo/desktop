@@ -2,8 +2,26 @@ use crate::{control::segment, ui::State};
 use serde_json::json;
 
 pub(super) fn hostname(s: &State) -> String {
-    if !s.hostname.text.trim().is_empty() {
-        return s.hostname.text.trim().into();
+    let domain = if s.domain.is_empty() {
+        "reoclo.localhost"
+    } else {
+        s.domain.as_str()
+    };
+    let typed = s.hostname.text.trim().to_ascii_lowercase();
+    if !typed.is_empty() {
+        // The domain itself, or a whole name already on it, is used as written.
+        if typed == domain || typed.ends_with(&format!(".{domain}")) {
+            return typed;
+        }
+        return format!("{typed}.{domain}");
+    }
+    let name = if s.name.text.trim().is_empty() {
+        "tunnel"
+    } else {
+        s.name.text.trim()
+    };
+    if domain != "reoclo.localhost" {
+        return format!("{name}.{domain}");
     }
     let server = s
         .servers
@@ -11,15 +29,7 @@ pub(super) fn hostname(s: &State) -> String {
         .find(|server| server.id == s.server)
         .map(|server| server.slug.as_str())
         .unwrap_or("server");
-    format!(
-        "{}.{}.reoclo.localhost",
-        if s.name.text.is_empty() {
-            "tunnel"
-        } else {
-            s.name.text.trim()
-        },
-        server
-    )
+    format!("{name}.{server}.reoclo.localhost")
 }
 
 pub(super) fn save(s: &mut State) {
@@ -51,7 +61,18 @@ pub(super) fn save(s: &mut State) {
         .find(|server| server.id == s.server)
         .map(|server| server.slug.clone())
         .unwrap_or_default();
+    // The daemon stores the tenant id with each tunnel; the org list carries it as `id`.
+    let Some(tenant_id) = s
+        .orgs
+        .iter()
+        .find(|org| org.slug == s.org)
+        .map(|org| org.id.clone())
+    else {
+        s.error = Some("Choose an organization and server.".into());
+        return;
+    };
     let mut body = json!({"name":name,"org":s.org,"server":server,"server_id":s.server,"kind":s.kind,"via":s.via});
+    body["tenant_id"] = json!(tenant_id);
     if s.kind == "reverse" {
         body["local_target"] = json!(s.target.text.trim());
     } else {

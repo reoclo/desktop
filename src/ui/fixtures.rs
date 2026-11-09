@@ -9,6 +9,7 @@ impl State {
             model: Model {
                 status: f.status,
                 tunnels: f.tunnels,
+                foreground: f.foreground,
                 approvals: f.approvals,
                 host_entries: f.host_entries,
                 selected: Some("grafana".into()),
@@ -53,13 +54,19 @@ impl State {
         }
         s.phase = match case {
             "loading" => ViewState::Loading,
-            "empty" => ViewState::Empty,
+            "empty" | "terminal" => ViewState::Empty,
             "offline" => ViewState::Offline,
             "signed-out" | "device-code" => ViewState::SignedOut,
             "error" => ViewState::Error,
             _ => ViewState::Loaded,
         };
+        if case == "terminal" {
+            s.model.tunnels.clear();
+            s.model.approvals.clear();
+            s.model.selected = None;
+        }
         if case == "empty" {
+            s.model.foreground.clear();
             s.model.tunnels.clear();
             s.model.approvals.clear();
             s.model.selected = None;

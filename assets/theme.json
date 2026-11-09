@@ -3,13 +3,13 @@
   "light": {
     "bg": "#f7f7ec", "fg": "#0a0a09", "muted": "#efeedf", "secondary": "#5a594f",
     "popover": "#fbfaf0", "border": "#d9d8c8", "input": "#86857a", "focus": "#c25a08",
-    "accent": "#e87418", "selected": "#e3e2d0", "hover": "#ebead9",
+    "accent": "#e87418", "track": "#ce6210", "selected": "#e3e2d0", "hover": "#ebead9",
     "success": "#37702f", "warning": "#94500c", "info": "#17609a", "danger": "#a8201a", "thumb": "#fbfaf0"
   },
   "dark": {
     "bg": "#0e1620", "fg": "#ecebdc", "muted": "#172230", "secondary": "#a3acb5",
     "popover": "#131d29", "border": "#2a3644", "input": "#56687c", "focus": "#d9802e",
-    "accent": "#d9802e", "selected": "#1a2636", "hover": "#1a2636",
+    "accent": "#d9802e", "track": "#c46a1a", "selected": "#26364a", "hover": "#1a2636",
     "success": "#7fbf6a", "warning": "#e3a93f", "info": "#6fb4e6", "danger": "#f08a80", "thumb": "#fbfaf0"
   }
 }

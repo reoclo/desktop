@@ -9,7 +9,7 @@ mkdir -p snapshots evidence
 cargo build --locked --bins
 app=./target/debug/reoclo-desktop
 for screen in tunnels add hosts certificates settings panel; do
-  for state in loaded loading empty offline signed-out device-code error; do
+  for state in loaded loading empty terminal offline signed-out device-code error; do
     for theme in light dark; do
       name="$screen-$state-$theme"
       "$app" --fixture --screen "$screen" --state "$state" --theme "$theme" \

@@ -15,7 +15,7 @@ mod tunnels;
 use crate::theme::{self, *};
 use rune::{Cx, El, col, text};
 use rune_kit::shell::{Sidebar, SidebarRow, SidebarSection, SplitView, Toolbar};
-pub use state::{Page, Request, State, ViewState};
+pub use state::{Page, Request, State, ViewState, read_preferences};
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     cx.reduced_motion(s.reduced_motion || cx.system_reduced_motion());
@@ -35,9 +35,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         return rune_kit::root(body, layer);
     }
     let content = match s.phase {
-        ViewState::Loaded | ViewState::Empty
-            if s.phase == ViewState::Loaded || s.page != Page::Tunnels =>
-        {
+        ViewState::Loaded | ViewState::Empty if s.has_tunnels() || s.page != Page::Tunnels => {
             match s.page {
                 Page::Hosts => hosts::view(s, &k),
                 Page::Certificates => certificates::view(s, &k),
@@ -48,30 +46,49 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         _ => primitives::data_state(s, &k),
     };
     let sidebar = Sidebar::new()
-        .header(
-            text("Reoclo")
-                .font(HEADING)
-                .color(k.c.text_base)
-                .px(LG)
-                .py(XL),
+        .header(primitives::wordmark(&k).px(SM).py(MD))
+        .footer(
+            rune::row().child(
+                rune_kit::Button::new("Documentation")
+                    .variant(rune_kit::ButtonVariant::GhostMuted)
+                    .on_press_tx(|s: &mut State, tx| {
+                        if let Err(error) =
+                            tx.open_url("https://docs.reoclo.com/guides/local-https/")
+                        {
+                            s.error = Some(error.to_string());
+                        }
+                    })
+                    .build(&k)
+                    .px(SM)
+                    .key("open-docs"),
+            ),
         )
         .section(
             SidebarSection::new("This Mac").rows(Page::ALL.into_iter().map(|page| {
                 SidebarRow::new(page.name())
                     .selected(s.page == page)
-                    .on_select(move |s: &mut State, _| {
-                        s.page = page;
-                        s.error = None;
-                    })
+                    .on_select(move |s: &mut State, _| s.show_page(page))
                     .build(&k)
                     .key(format!("nav-{}", page.name().to_lowercase()))
             })),
         )
         .build(&k);
-    let toolbar = if s.phase == ViewState::Offline {
-        Toolbar::new().trailing(text("Daemon offline").font(LABEL).color(k.c.warning.fg))
+    let status = if s.phase == ViewState::Offline {
+        Some(primitives::indicator(primitives::Tone::Warning, "Daemon offline", &k).role("status"))
+    } else if s.busy {
+        Some(primitives::indicator(primitives::Tone::Info, "Working", &k).role("status"))
     } else {
-        Toolbar::new()
+        s.notice.as_ref().map(|notice| {
+            text(notice)
+                .role("status")
+                .font(HINT)
+                .color(k.c.text_muted)
+                .truncate()
+        })
+    };
+    let toolbar = match status {
+        Some(status) => Toolbar::new().trailing(status),
+        None => Toolbar::new(),
     };
     let body = SplitView::new(content)
         .sidebar(&s.sidebar, |s: &mut State| &mut s.sidebar, sidebar)

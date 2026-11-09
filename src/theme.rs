@@ -14,6 +14,13 @@ pub const HEADING: TextStyle = TextStyle::new(18.0, 600.0);
 pub const BODY: TextStyle = TextStyle::new(14.0, 400.0);
 pub const LABEL: TextStyle = TextStyle::new(12.0, 600.0);
 pub const MONO: TextStyle = TextStyle::new(12.0, 400.0).mono();
+pub const HINT: TextStyle = TextStyle::new(12.0, 400.0);
+pub const WORDMARK: TextStyle = TextStyle::new(18.0, 800.0).family(Family::Named("Mona Sans"));
+pub const CODE: TextStyle = TextStyle::new(18.0, 500.0).mono();
+/// One column of the two-column Add tunnel form.
+pub const FORM_COLUMN: f32 = 256.0;
+/// The height of a text input, which selects match so rows line up.
+pub const FIELD_HEIGHT: f32 = 29.5;
 pub const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/Figtree.ttf"),
     include_bytes!("../assets/fonts/JetBrainsMono.ttf"),
@@ -46,7 +53,9 @@ pub fn kit(dark: bool) -> Result<Kit, String> {
     k.c.bg_contrast = t.color("fg");
     k.c.text_contrast = t.color("bg");
     k.c.bg_button_neutral = t.color("bg");
-    k.c.knob = t.color("fg");
+    k.c.bg_accent = t.color("track");
+    k.c.knob = t.color("thumb");
+    k.c.layer_04 = t.color("input");
     k.c.knob_on = t.color("thumb");
     k.c.depth_top = rune::Color {
         a: 0.0,
@@ -71,6 +80,12 @@ pub fn kit(dark: bool) -> Result<Kit, String> {
     k.c.info = status("info");
     k.c.danger = status("danger");
     k.elevation = Elevation::default();
+    // A menu opens over surfaces of its own color, so it needs an edge. A one-point rule, not a shadow.
+    k.elevation.floating = vec![rune::Shadow {
+        spread: RULE,
+        color: t.color("input"),
+        ..rune::Shadow::default()
+    }];
     k.radius = Radius {
         xs: 2.0,
         sm: 2.0,
