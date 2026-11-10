@@ -7,7 +7,14 @@ pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
     let Some(modal) = s.modal.as_deref() else {
         return;
     };
+    let link_text = s.link_description();
     let (title, description, action, destructive) = match modal {
+        "open-link" => (
+            "Open this link?",
+            link_text.as_deref().unwrap_or_default(),
+            "Continue",
+            false,
+        ),
         "remove" => (
             "Remove tunnel?",
             "This closes the tunnel and removes its saved configuration and hostname.",
@@ -28,7 +35,7 @@ pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
         ),
         "start" => (
             "Start local daemon?",
-            "Reoclo will start its bundled CLI in the background. Your saved tunnels remain owned by the daemon.",
+            "Reoclo will install its background service with the bundled CLI. It starts now and every time you log in. Your saved tunnels remain owned by the daemon.",
             "Start daemon",
             false,
         ),
@@ -103,7 +110,8 @@ pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
             }
             "trust" => s.request("POST", "/v1/ca/trust", None),
             "untrust" => s.request("POST", "/v1/ca/untrust", None),
-            "start" => s.run_system(SystemAction::StartDaemon),
+            "start" => s.run_system(SystemAction::InstallDaemon),
+            "open-link" => s.confirm_link(),
             "setup" => {
                 let setup = s.helper_setup(s.relay_enabled());
                 s.run_system(SystemAction::SetupHosts(setup));
@@ -169,6 +177,9 @@ impl State {
     }
 
     pub fn cancel_confirmation(&mut self) {
+        if self.modal.as_deref() == Some("open-link") {
+            self.link = None;
+        }
         self.modal = if self.modal.as_deref() == Some("discard") {
             self.return_modal.take()
         } else {

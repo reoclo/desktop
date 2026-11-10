@@ -22,6 +22,9 @@ pub fn start(
                             if let SystemAction::StartAtLogin(enabled) = action {
                                 s.start_at_login = enabled;
                             }
+                            if action == SystemAction::InstallDaemon {
+                                s.service_installed_ok();
+                            }
                             if matches!(action, SystemAction::SetupHosts(_)) {
                                 // The helper's own answer decides what the app reports.
                                 s.request("POST", "/v1/hosts/sync", None);
@@ -31,7 +34,10 @@ pub fn start(
                                 s.notice = Some(message);
                             }
                         }
-                        Err(message) => s.error = Some(message),
+                        Err(message) => {
+                            s.error = Some(message);
+                            s.system_failed(&action);
+                        }
                     }
                 });
             }

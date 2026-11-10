@@ -86,6 +86,7 @@ pub fn view(s: &State, k: &Kit) -> El {
             .child(bar(k, XL))
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL))
+            .child(bar(k, CONTROL))
             .child(bar(k, RULE))
             .child(bar(k, XL))
             .child(bar(k, CONTROL))

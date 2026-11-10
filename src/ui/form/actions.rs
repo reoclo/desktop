@@ -1,6 +1,11 @@
 use crate::{control::segment, ui::State};
 use serde_json::json;
 
+/// The hostname a tunnel gets on the built-in domain when none is typed.
+pub(in crate::ui) fn default_hostname(name: &str, server: &str) -> String {
+    format!("{name}.{server}.reoclo.localhost")
+}
+
 pub(super) fn hostname(s: &State) -> String {
     let domain = if s.domain.is_empty() {
         "reoclo.localhost"
@@ -29,7 +34,7 @@ pub(super) fn hostname(s: &State) -> String {
         .find(|server| server.id == s.server)
         .map(|server| server.slug.as_str())
         .unwrap_or("server");
-    format!("{name}.{server}.reoclo.localhost")
+    default_hostname(name, server)
 }
 
 pub(super) fn save(s: &mut State) {

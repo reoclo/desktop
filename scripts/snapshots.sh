@@ -19,7 +19,7 @@ for screen in tunnels add hosts certificates settings panel; do
   done
 done
 for theme in light dark; do
-  for dialog in edit remove discard start setup trust untrust; do
+  for dialog in edit remove discard start setup trust untrust get-started get-started-progress get-started-done open-link; do
     "$app" --fixture --screen "$dialog" --theme "$theme" \
       --snap "snapshots/dialog-$dialog-$theme.png" --tree "snapshots/dialog-$dialog-$theme.json"
   done

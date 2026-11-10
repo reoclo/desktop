@@ -374,6 +374,60 @@ pub fn terminal_tunnels(s: &State, k: &Kit) -> Option<El> {
     Some(section)
 }
 
+/// The sign-in code, the buttons that use it and the page to finish in. `prefix` keeps keys
+/// unique when this shows over another copy of itself.
+pub fn device_code(s: &State, k: &Kit, prefix: &str) -> Vec<El> {
+    let Some(code) = &s.model.auth.user_code else {
+        return Vec::new();
+    };
+    let mut items = vec![
+        col()
+            .gap(XS)
+            .child(text("Device code").font(LABEL).color(k.c.text_muted))
+            .child(
+                text(code)
+                    .font(CODE)
+                    .color(k.c.text_base)
+                    .selectable(true)
+                    .selection_color(k.selection()),
+            ),
+    ];
+    let code = code.clone();
+    let mut actions = row().gap(SM);
+    if let Some(url) = s.model.auth.verification_uri_complete.as_ref().or(s
+        .model
+        .auth
+        .verification_uri
+        .as_ref())
+    {
+        let url = url.clone();
+        actions = actions.child(
+            Button::new("Open sign-in page")
+                .on_press_tx(move |s: &mut State, tx| {
+                    if let Err(error) = tx.open_url(&url) {
+                        s.error = Some(error.to_string());
+                    }
+                })
+                .primary(k)
+                .key(format!("{prefix}open-sign-in")),
+        );
+    }
+    actions = actions.child(
+        Button::new("Copy device code")
+            .on_press_tx(move |s: &mut State, tx| {
+                tx.copy(&code);
+                s.notice = Some("Device code copied.".into());
+            })
+            .secondary(k)
+            .key(format!("{prefix}copy-device-code")),
+    );
+    items.push(actions);
+    if let Some(url) = &s.model.auth.verification_uri {
+        items.push(field("Continue in your browser", url, k));
+    }
+    items
+}
+
 pub fn data_state(s: &State, k: &Kit) -> El {
     if s.phase == ViewState::Loading {
         return super::skeleton::view(s, k);
@@ -420,52 +474,8 @@ pub fn data_state(s: &State, k: &Kit) -> El {
             .child(text(heading).font(HEADING).color(k.c.text_base))
             .child(text(detail).font(BODY).color(k.c.text_muted).wrap()),
     );
-    if let Some(code) = &s.model.auth.user_code {
-        body = body.child(
-            col()
-                .gap(XS)
-                .child(text("Device code").font(LABEL).color(k.c.text_muted))
-                .child(
-                    text(code)
-                        .font(CODE)
-                        .color(k.c.text_base)
-                        .selectable(true)
-                        .selection_color(k.selection()),
-                ),
-        );
-        let code = code.clone();
-        let mut actions = row().gap(SM);
-        if let Some(url) = s.model.auth.verification_uri_complete.as_ref().or(s
-            .model
-            .auth
-            .verification_uri
-            .as_ref())
-        {
-            let url = url.clone();
-            actions = actions.child(
-                Button::new("Open sign-in page")
-                    .on_press_tx(move |s: &mut State, tx| {
-                        if let Err(error) = tx.open_url(&url) {
-                            s.error = Some(error.to_string());
-                        }
-                    })
-                    .primary(k)
-                    .key("open-sign-in"),
-            );
-        }
-        actions = actions.child(
-            Button::new("Copy device code")
-                .on_press_tx(move |s: &mut State, tx| {
-                    tx.copy(&code);
-                    s.notice = Some("Device code copied.".into());
-                })
-                .secondary(k)
-                .key("copy-device-code"),
-        );
-        body = body.child(actions);
-        if let Some(url) = &s.model.auth.verification_uri {
-            body = body.child(field("Continue in your browser", url, k));
-        }
+    for item in device_code(s, k, "") {
+        body = body.child(item);
     }
     if let Some(label) = action
         && !(s.panel && s.phase == ViewState::Empty)

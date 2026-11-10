@@ -91,6 +91,15 @@ pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
                         .key("start-at-login"),
                     k,
                 ))
+                .child(setting(
+                    "Get started",
+                    Some("Check the background service, sign-in and secure web addresses again."),
+                    Button::new("Run setup again")
+                        .on_press(|s: &mut State| s.begin_setup())
+                        .secondary(k)
+                        .key("run-setup"),
+                    k,
+                ))
                 .child(setting("Appearance", None, appearance, k))
                 .child(setting(
                     "Menu bar",

@@ -1,3 +1,4 @@
+use super::links::{Effect, PendingLink};
 use crate::{model::*, reducer::Model};
 use rune::TextEdit;
 use rune_kit::{ComboboxState, PaneState, TableState};
@@ -108,6 +109,17 @@ pub struct State {
     pub menu_bar: MenuBarStyle,
     pub tray_shown: Option<(MenuBarStyle, usize, usize, usize)>,
     pub preferences_path: Option<std::path::PathBuf>,
+    /// Get started was finished once.
+    pub onboarded: bool,
+    /// The launch agent the daemon install writes; its presence means the service starts at login.
+    pub service_plist: Option<std::path::PathBuf>,
+    pub service_installed: bool,
+    /// A Secure web addresses run is trusting the CA and installing the hosts helper.
+    pub securing: bool,
+    /// A `reoclo://open` link waiting for a confirmation or for the daemon.
+    pub link: Option<PendingLink>,
+    /// Things a reply decided to do that need the window, such as opening the browser.
+    pub effects: Vec<Effect>,
 }
 
 impl Default for State {
@@ -168,6 +180,12 @@ impl Default for State {
             menu_bar: MenuBarStyle::default(),
             tray_shown: None,
             preferences_path: None,
+            onboarded: false,
+            service_plist: None,
+            service_installed: false,
+            securing: false,
+            link: None,
+            effects: Vec::new(),
         }
     }
 }
@@ -221,6 +239,7 @@ impl State {
         };
         let saved = Preferences {
             menu_bar: self.menu_bar,
+            onboarded: self.onboarded,
         };
         if let Err(error) = write_preferences(&path, &saved) {
             self.error = Some(format!("Could not save your preference: {error}"));
@@ -279,6 +298,14 @@ impl State {
         self.kind_picker.close();
         self.via_picker.close();
         self.domain_picker.close();
+    }
+
+    pub fn helper_installed(&self) -> bool {
+        self.model
+            .status
+            .hosts
+            .as_ref()
+            .is_some_and(|hosts| hosts.installed)
     }
 
     /// True when the CA exists and this Mac trusts it, so HTTPS certificates will be accepted.

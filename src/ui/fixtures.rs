@@ -1,5 +1,5 @@
-use super::{Page, State, ViewState};
-use crate::{fake::Fixture, model::*, reducer::Model};
+use super::{Page, State, ViewState, links::PendingLink};
+use crate::{fake::Fixture, link, model::*, reducer::Model};
 use rune::TextEdit;
 
 impl State {
@@ -107,6 +107,38 @@ impl State {
                 status: "pending".into(),
                 ..Default::default()
             };
+        }
+        if page.starts_with("get-started") {
+            s.modal = Some("get-started".into());
+            match page {
+                "get-started" => {
+                    s.phase = ViewState::Offline;
+                    s.model.status = Status::default();
+                }
+                "get-started-progress" => {
+                    s.service_installed = true;
+                    s.phase = ViewState::SignedOut;
+                    s.model.status.signed_in = Some(false);
+                    s.model.auth = AuthEvent {
+                        user_code: Some("DEMO-7294".into()),
+                        verification_uri: Some("https://auth.reoclo.com/device".into()),
+                        status: "pending".into(),
+                        ..Default::default()
+                    };
+                    if let Some(ca) = &mut s.model.status.ca {
+                        ca.trusted = false;
+                    }
+                }
+                _ => s.service_installed = true,
+            }
+        }
+        if page == "open-link" {
+            s.link = link::parse(
+                "reoclo://open?v=1&org=demo&server=prod-1&port=3000&kind=https&name=grafana-web",
+            )
+            .ok()
+            .map(PendingLink::new);
+            s.modal = Some("open-link".into());
         }
         s.table.select("grafana");
         Ok(s)

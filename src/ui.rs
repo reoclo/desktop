@@ -4,6 +4,8 @@ mod fault;
 mod fixtures;
 mod form;
 mod hosts;
+mod links;
+mod onboarding;
 mod panel;
 mod replies;
 mod settings;
@@ -13,6 +15,8 @@ pub use fault::Fault;
 mod primitives;
 mod tunnels;
 use crate::theme::{self, *};
+pub use links::{Effect, LinkStep, PendingLink};
+pub use onboarding::SetupStatus;
 use rune::{Cx, El, col, text};
 use rune_kit::shell::{Sidebar, SidebarRow, SidebarSection, SplitView, Toolbar};
 pub use state::{Page, Request, State, ViewState, read_preferences};
@@ -109,6 +113,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         );
     }
     form::sheet(s, &k, &mut layer);
+    onboarding::sheet(s, &k, &mut layer);
     dialogs::confirmations(s, &k, &mut layer);
     rune_kit::root(body, std::mem::take(&mut layer))
 }

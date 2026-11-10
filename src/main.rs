@@ -18,7 +18,7 @@ fn spec() -> AppSpec<State> {
         families: ("Figtree", "JetBrains Mono"),
         min_size: Some((760.0, 620.0)),
         on_key: Some(keys),
-        poll: Some(State::expire_notice),
+        poll: Some(State::poll),
         ..AppSpec::new("Reoclo", (1100.0, 760.0), State::default, view)
     }
 }
@@ -117,12 +117,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_deref()
         .map(reoclo_desktop::ui::read_preferences)
         .unwrap_or_default();
+    let service_plist = (!demo).then(|| home.join("Library/LaunchAgents/com.reoclo.tunneld.plist"));
+    let service_installed = demo || service_plist.as_ref().is_some_and(|plist| plist.exists());
+    let onboarded = demo || preferences.onboarded;
     let mut app = App::new(spec())
         .titlebar(TITLEBAR)
         .init(move || State {
             start_at_login: login_enabled,
             menu_bar: preferences.menu_bar,
             preferences_path,
+            onboarded,
+            modal: (!onboarded).then(|| "get-started".to_owned()),
+            service_plist,
+            service_installed,
             ..State::default()
         })
         .args(args)
@@ -142,6 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "reoclo://hosts" => s.page = Page::Hosts,
                 "reoclo://certificates" => s.page = Page::Certificates,
                 "reoclo://settings" => s.page = Page::Settings,
+                url if reoclo_desktop::link::is_open_link(url) => s.open_link(url),
                 _ => s.notice = Some("This Reoclo link is not supported.".into()),
             }
             if let Some(handle) = &s.window_handle {

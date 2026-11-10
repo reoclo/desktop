@@ -87,27 +87,7 @@ impl Connection {
                                     for handle in &handles {
                                         let name = event.name.clone();
                                         let data = event.data.clone();
-                                        handle.update(move |s, _| {
-                                            if let Err(error) = s.model.apply(&name, &data) {
-                                                s.error =
-                                                    Some(format!("Invalid daemon event: {error}"));
-                                            }
-                                            if name == "auth" {
-                                                match s.model.auth.status.as_str() {
-                                                    "success" => {
-                                                        s.phase = ViewState::Loaded;
-                                                        s.error = None;
-                                                    }
-                                                    "pending" => s.phase = ViewState::SignedOut,
-                                                    "failed" => {
-                                                        s.phase = ViewState::SignedOut;
-                                                        s.error = s.model.auth.message.clone();
-                                                    }
-                                                    _ => {}
-                                                }
-                                            }
-                                            s.sync_tray();
-                                        });
+                                        handle.update(move |s, _| s.apply_event(&name, &data));
                                     }
                                     if event.name == "auth" {
                                         let auth: Result<crate::model::AuthEvent, _> =

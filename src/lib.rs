@@ -1,6 +1,7 @@
 pub mod connection;
 pub mod control;
 pub mod fake;
+pub mod link;
 pub mod model;
 pub mod paths;
 pub mod reducer;

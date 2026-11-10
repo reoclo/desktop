@@ -130,6 +130,8 @@ impl MenuBarStyle {
 #[serde(default)]
 pub struct Preferences {
     pub menu_bar: MenuBarStyle,
+    /// The Get started screen was finished once, so it no longer opens on launch.
+    pub onboarded: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

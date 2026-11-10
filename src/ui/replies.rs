@@ -8,6 +8,33 @@ impl State {
         self.sync_tray();
     }
 
+    /// A daemon event arrived on the event stream.
+    pub fn apply_event(&mut self, name: &str, data: &str) {
+        if let Err(error) = self.model.apply(name, data) {
+            self.error = Some(format!("Invalid daemon event: {error}"));
+        }
+        match name {
+            "auth" => match self.model.auth.status.as_str() {
+                "success" => {
+                    self.phase = ViewState::Loaded;
+                    self.error = None;
+                    self.model.status.signed_in = Some(true);
+                    self.link_signed_in();
+                }
+                "pending" => self.phase = ViewState::SignedOut,
+                "failed" => {
+                    self.phase = ViewState::SignedOut;
+                    self.error = self.model.auth.message.clone();
+                    self.link = None;
+                }
+                _ => {}
+            },
+            "tunnel" => self.link_check_tunnel(),
+            _ => {}
+        }
+        self.sync_tray();
+    }
+
     fn apply_response(&mut self, request: &Request, response: Result<Value, Fault>) {
         self.busy = false;
         match response {
@@ -15,11 +42,15 @@ impl State {
                 if let Err(error) = self.accept(request, value) {
                     self.error = Some(format!("The daemon returned an invalid response: {error}"));
                     self.phase = ViewState::Error;
+                } else {
+                    self.link_reply(request);
                 }
             }
             // A daemon older than this feature has no such route, and nothing to report.
             Err(Fault::Error(_)) if request.path == "/v1/foreground" => {}
             Err(fault) => {
+                self.secure_failed(request);
+                self.link_failed(request);
                 self.error = Some(match fault {
                     Fault::Offline(message) => {
                         self.phase = ViewState::Offline;
@@ -44,7 +75,10 @@ impl State {
 
     fn accept(&mut self, request: &Request, value: Value) -> Result<(), serde_json::Error> {
         match (request.method.as_str(), request.path.as_str()) {
-            ("GET", "/v1/status") => self.model.status = serde_json::from_value(value)?,
+            ("GET", "/v1/status") => {
+                self.model.status = serde_json::from_value(value)?;
+                self.refresh_service();
+            }
             ("GET", "/v1/foreground") => {
                 self.model.foreground = serde_json::from_value::<ForegroundList>(value)?.tunnels;
             }
@@ -57,7 +91,8 @@ impl State {
             }
             ("GET", "/v1/hosts") | ("POST", "/v1/hosts/sync") => {
                 let hosts: HostsList = serde_json::from_value(value)?;
-                if std::mem::take(&mut self.awaiting_helper) {
+                let after_install = std::mem::take(&mut self.awaiting_helper);
+                if after_install {
                     if hosts.helper.installed {
                         self.notice = Some("Hosts helper installed.".into());
                     } else {
@@ -69,6 +104,9 @@ impl State {
                 }
                 self.model.host_entries = hosts.entries;
                 self.model.status.hosts = Some(hosts.helper);
+                if after_install {
+                    self.secure_after_helper();
+                }
             }
             ("GET", "/v1/tunnels") => {
                 self.model.tunnels = serde_json::from_value::<TunnelList>(value)?.tunnels;
@@ -214,6 +252,9 @@ impl State {
                 // Trusting from the Add tunnel form keeps the form open so it can be saved.
                 if self.modal.as_deref() == Some("trust") {
                     self.modal = None;
+                }
+                if self.securing && !domain {
+                    self.secure_after_trust();
                 }
             }
             _ => {

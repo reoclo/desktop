@@ -4,7 +4,7 @@ use rune::{El, ScrollSpec, col, el, row, text};
 use rune_kit::{
     Button, Combobox, ComboboxOption, Dialog, Kit, Select, SelectAppearance, TextInput,
 };
-mod actions;
+pub(super) mod actions;
 mod controls;
 use actions::{hostname, save};
 use controls::{Picker, label, options, picker};

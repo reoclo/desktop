@@ -6,7 +6,7 @@ use reoclo_desktop::system::{
 fn injected_runner_never_changes_system_state() {
     let runner = FakeRunner;
     for action in [
-        SystemAction::StartDaemon,
+        SystemAction::InstallDaemon,
         SystemAction::SetupHosts(Default::default()),
         SystemAction::StartAtLogin(true),
     ] {

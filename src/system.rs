@@ -11,7 +11,8 @@ pub struct HelperSetup {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SystemAction {
-    StartDaemon,
+    /// `tunnel daemon install`: starts the daemon now and at every login.
+    InstallDaemon,
     SetupHosts(HelperSetup),
     StartAtLogin(bool),
 }
@@ -89,8 +90,8 @@ fn current_uid() -> Result<u32, String> {
 impl SystemRunner for MacRunner {
     fn run(&self, action: &SystemAction) -> Result<String, String> {
         let output = match action {
-            SystemAction::StartDaemon => Command::new(&self.cli)
-                .args(["tunnel", "daemon", "start"])
+            SystemAction::InstallDaemon => Command::new(&self.cli)
+                .args(["tunnel", "daemon", "install"])
                 .output(),
             SystemAction::SetupHosts(setup) => {
                 let script = admin_script(&self.cli.to_string_lossy(), current_uid()?, setup);
