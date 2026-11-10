@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 pub mod worker;
 
@@ -13,18 +13,22 @@ pub struct HelperSetup {
 pub enum SystemAction {
     /// `tunnel daemon install`: starts the daemon now and at every login.
     InstallDaemon,
+    /// Stop the daemon and start it again on the CLI the app found, under launchd when the service is installed.
+    RestartDaemon,
     SetupHosts(HelperSetup),
     StartAtLogin(bool),
 }
 
 pub trait SystemRunner: Send + 'static {
-    fn run(&self, action: &SystemAction) -> Result<String, String>;
+    /// `cli` is the reoclo CLI to run. Start at login needs none.
+    fn run(&self, action: &SystemAction, cli: Option<&Path>) -> Result<String, String>;
 }
 
 pub struct MacRunner {
-    pub cli: PathBuf,
     pub desktop: PathBuf,
     pub launch_agent: PathBuf,
+    /// The daemon's own launch agent, present when the service is installed.
+    pub service_plist: PathBuf,
 }
 
 fn xml(value: &str) -> String {
@@ -88,13 +92,37 @@ fn current_uid() -> Result<u32, String> {
 }
 
 impl SystemRunner for MacRunner {
-    fn run(&self, action: &SystemAction) -> Result<String, String> {
+    fn run(&self, action: &SystemAction, cli: Option<&Path>) -> Result<String, String> {
+        let cli = || cli.ok_or_else(|| "No reoclo CLI was found to run.".to_owned());
         let output = match action {
-            SystemAction::InstallDaemon => Command::new(&self.cli)
+            SystemAction::InstallDaemon => Command::new(cli()?)
                 .args(["tunnel", "daemon", "install"])
                 .output(),
+            SystemAction::RestartDaemon => {
+                let stop = Command::new(cli()?)
+                    .args(["tunnel", "daemon", "stop"])
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                if !stop.status.success() {
+                    return Err(String::from_utf8_lossy(&stop.stderr).trim().to_owned());
+                }
+                let start = if self.service_plist.exists() {
+                    "install"
+                } else {
+                    "start"
+                };
+                let output = Command::new(cli()?)
+                    .args(["tunnel", "daemon", start])
+                    .output()
+                    .map_err(|e| e.to_string())?;
+                return if output.status.success() {
+                    Ok("Daemon restarted.".into())
+                } else {
+                    Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+                };
+            }
             SystemAction::SetupHosts(setup) => {
-                let script = admin_script(&self.cli.to_string_lossy(), current_uid()?, setup);
+                let script = admin_script(&cli()?.to_string_lossy(), current_uid()?, setup);
                 let output = Command::new("/usr/bin/osascript")
                     .args(["-e", &script])
                     .output()
@@ -138,7 +166,7 @@ impl SystemRunner for MacRunner {
 #[derive(Default)]
 pub struct FakeRunner;
 impl SystemRunner for FakeRunner {
-    fn run(&self, action: &SystemAction) -> Result<String, String> {
+    fn run(&self, action: &SystemAction, _cli: Option<&Path>) -> Result<String, String> {
         Ok(format!(
             "Development runner completed {action:?}; no system changes."
         ))

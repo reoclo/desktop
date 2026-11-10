@@ -1,12 +1,13 @@
 {
   "status": {
-    "version": "0.102.0",
+    "version": "0.104.0",
+    "executable": "/opt/homebrew/bin/reoclo",
     "pid": 4242,
     "uptime_seconds": 3600,
     "signed_in": true,
     "https": { "port": 8443, "listening": true },
     "ca": { "exists": true, "trusted": true, "not_after": "2028-11-09T00:00:00Z", "suffixes": ["reoclo.localhost"] },
-    "hosts": { "installed": true, "entries": 2, "relay": { "enabled": false, "listening": false } }
+    "hosts": { "installed": true, "version": "0.104.0", "entries": 2, "relay": { "enabled": false, "listening": false } }
   },
   "foreground": [
     {

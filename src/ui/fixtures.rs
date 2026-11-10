@@ -1,11 +1,17 @@
 use super::{Page, State, ViewState, links::PendingLink};
-use crate::{fake::Fixture, link, model::*, reducer::Model};
+use crate::{cli::Cli, fake::Fixture, link, model::*, reducer::Model};
 use rune::TextEdit;
 
 impl State {
     pub fn fixture(page: &str, case: &str) -> Result<Self, serde_json::Error> {
         let f = Fixture::load()?;
+        let cli = Cli::Ready {
+            path: "/opt/homebrew/bin/reoclo".into(),
+            version: f.status.version.clone(),
+            bundled: false,
+        };
         let mut s = Self {
+            cli: Some(cli),
             model: Model {
                 status: f.status,
                 tunnels: f.tunnels,
@@ -94,6 +100,23 @@ impl State {
             tunnel.message = state.label().into();
             tunnel.detail = Some("The daemon reported this tunnel state.".into());
             tunnel.action = "Review the state, then retry or sign in as needed.".into();
+        }
+        if case == "outdated" {
+            s.cli = Some(Cli::Ready {
+                path: "/opt/homebrew/bin/reoclo".into(),
+                version: "0.104.0".into(),
+                bundled: false,
+            });
+            s.model.status.version = "0.103.2".into();
+            if let Some(hosts) = &mut s.model.status.hosts {
+                hosts.version = Some("0.103.1".into());
+            }
+        }
+        if case == "cli-old" {
+            s.cli = Some(Cli::TooOld {
+                path: "/usr/local/bin/reoclo".into(),
+                version: "0.98.0".into(),
+            });
         }
         if case == "error" {
             s.error = Some(

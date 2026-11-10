@@ -1,16 +1,17 @@
 use super::{SystemAction, SystemRunner};
-use crate::ui::State;
+use crate::{cli::Locator, ui::State};
 use rune::AppHandle;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
 
 pub fn start(
     runner: Box<dyn SystemRunner>,
     handles: Vec<AppHandle<State>>,
-) -> Sender<SystemAction> {
-    let (sender, receive) = mpsc::channel();
+) -> Sender<(SystemAction, Option<PathBuf>)> {
+    let (sender, receive) = mpsc::channel::<(SystemAction, Option<PathBuf>)>();
     std::thread::spawn(move || {
-        for action in receive {
-            let result = runner.run(&action);
+        for (action, cli) in receive {
+            let result = runner.run(&action, cli.as_deref());
             for handle in &handles {
                 let result = result.clone();
                 let action = action.clone();
@@ -40,6 +41,22 @@ pub fn start(
                         }
                     }
                 });
+            }
+        }
+    });
+    sender
+}
+
+/// Looks for the CLI off the main thread, since each candidate runs `reoclo --version`.
+/// Each message is the executable the daemon reports.
+pub fn find_cli(locator: Locator, handles: Vec<AppHandle<State>>) -> Sender<Option<String>> {
+    let (sender, receive) = mpsc::channel::<Option<String>>();
+    std::thread::spawn(move || {
+        for daemon in receive {
+            let found = locator.locate(daemon.as_deref(), crate::cli::version_of);
+            for handle in &handles {
+                let found = found.clone();
+                handle.update(move |s, _| s.cli = Some(found));
             }
         }
     });

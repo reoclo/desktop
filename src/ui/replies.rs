@@ -78,6 +78,7 @@ impl State {
             ("GET", "/v1/status") => {
                 self.model.status = serde_json::from_value(value)?;
                 self.refresh_service();
+                self.find_cli(false);
             }
             ("GET", "/v1/foreground") => {
                 self.model.foreground = serde_json::from_value::<ForegroundList>(value)?.tunnels;

@@ -149,7 +149,7 @@ pub fn view(s: &State, k: &Kit) -> El {
         }
         None => {
             body = body.child(
-                text("This daemon does not report hosts. Update the bundled CLI to use managed hostnames.")
+                text("This daemon does not report hosts. Update the reoclo CLI and restart the daemon to use managed hostnames.")
                     .font(BODY)
                     .color(k.c.text_muted)
                     .wrap(),

@@ -64,7 +64,7 @@ pub fn view(s: &State, k: &Kit) -> El {
         );
     } else {
         authority = authority.child(
-            text("This daemon does not report certificate status. Update the bundled CLI to manage local trust.")
+            text("This daemon does not report certificate status. Update the reoclo CLI and restart the daemon to manage local trust.")
                 .font(BODY)
                 .color(k.c.warning.fg)
                 .wrap(),

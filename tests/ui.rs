@@ -1,6 +1,9 @@
-use reoclo_desktop::ui::{State, view};
-use reoclo_desktop::{control::Client, fake::FakeDaemon};
+use reoclo_desktop::ui::{Fault, Page, Request, State, view};
+use reoclo_desktop::{cli::MIN_VERSION, control::Client, fake::FakeDaemon, system::SystemAction};
 use rune::{Env, Runtime};
+use serde_json::{Value, json};
+use std::path::Path;
+use std::sync::mpsc;
 
 #[test]
 fn selecting_tunnel_and_toggling_queues_the_correct_daemon_action() {
@@ -190,6 +193,80 @@ fn click(rt: &mut Runtime<State>, key: &str) {
     rt.pointer_down(x, y);
     rt.pointer_up(x, y);
     rt.frame(0.02);
+}
+
+/// Settings tall enough that the command-line tool section is on screen.
+fn settings(state: State) -> Runtime<State> {
+    let mut rt = Runtime::new(state, view, (1100.0, 1600.0), Env::new(false, 1.0));
+    rt.frame(0.0);
+    rt
+}
+
+#[test]
+fn settings_shows_the_cli_and_offers_nothing_when_everything_is_current() {
+    let rt = settings(State::fixture("settings", "loaded").unwrap());
+    assert!(rt.find("cli-path").is_some());
+    assert!(rt.find("restart-daemon").is_none());
+    assert!(rt.find("update-helper").is_none());
+}
+
+#[test]
+fn settings_restarts_a_daemon_older_than_the_cli_with_that_cli() {
+    let mut state = State::fixture("settings", "outdated").unwrap();
+    let (runner, actions) = mpsc::channel();
+    state.system_runner = Some(runner);
+    let mut rt = settings(state);
+    assert!(rt.find("update-helper").is_some());
+    click(&mut rt, "restart-daemon");
+    let (action, cli) = actions.try_recv().unwrap();
+    assert_eq!(action, SystemAction::RestartDaemon);
+    assert_eq!(cli.as_deref(), Some(Path::new("/opt/homebrew/bin/reoclo")));
+}
+
+#[test]
+fn a_cli_older_than_the_app_needs_blocks_actions_that_run_it() {
+    let mut state = State::fixture("settings", "cli-old").unwrap();
+    let (runner, actions) = mpsc::channel();
+    state.system_runner = Some(runner);
+    state.run_system(SystemAction::InstallDaemon);
+    assert!(actions.try_recv().is_err());
+    assert!(!state.busy);
+    let error = state.error.clone().unwrap();
+    assert!(error.contains("0.98.0"), "{error}");
+    assert!(error.contains(MIN_VERSION), "{error}");
+    assert!(error.contains("reoclo upgrade"), "{error}");
+    state.run_system(SystemAction::StartAtLogin(true));
+    assert_eq!(
+        actions.try_recv().unwrap(),
+        (SystemAction::StartAtLogin(true), None)
+    );
+}
+
+#[test]
+fn a_new_daemon_executable_or_opening_settings_searches_for_the_cli_again() {
+    let mut state = State::fixture("tunnels", "loaded").unwrap();
+    let (finder, searches) = mpsc::channel();
+    state.cli_finder = Some(finder);
+    let status = Request {
+        method: "GET".into(),
+        path: "/v1/status".into(),
+        body: None,
+    };
+    let reply = || -> Result<Value, Fault> {
+        Ok(json!({"version": "0.104.0", "executable": "/opt/homebrew/bin/reoclo"}))
+    };
+    state.receive(&status, reply());
+    assert_eq!(
+        searches.try_recv().unwrap().as_deref(),
+        Some("/opt/homebrew/bin/reoclo")
+    );
+    state.receive(&status, reply());
+    assert!(searches.try_recv().is_err());
+    state.show_page(Page::Settings);
+    assert_eq!(
+        searches.try_recv().unwrap().as_deref(),
+        Some("/opt/homebrew/bin/reoclo")
+    );
 }
 
 #[test]

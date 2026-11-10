@@ -38,6 +38,11 @@ for theme in light dark; do
         --snap "snapshots/$screen-$size-$theme.png" --tree "snapshots/$screen-$size-$theme.json"
     done
   done
+  for state in loaded outdated cli-old; do
+    "$app" --fixture --screen settings --state "$state" --theme "$theme" \
+      --script scripts/window-end.json --at 1 \
+      --snap "snapshots/settings-cli-$state-$theme.png" --tree "snapshots/settings-cli-$state-$theme.json"
+  done
   for state in down ready connecting active reconnecting needs_sign_in server_offline quota_reached expired closed_by_operator forbidden failed; do
     "$app" --fixture --state "$state" --theme "$theme" \
       --snap "snapshots/tunnel-state-$state-$theme.png" --tree "snapshots/tunnel-state-$state-$theme.json"

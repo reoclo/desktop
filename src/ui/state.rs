@@ -1,5 +1,9 @@
 use super::links::{Effect, PendingLink};
-use crate::{model::*, reducer::Model};
+use crate::{
+    cli::{self, Cli},
+    model::*,
+    reducer::Model,
+};
 use rune::TextEdit;
 use rune_kit::{ComboboxState, PaneState, TableState};
 use serde_json::Value;
@@ -102,7 +106,13 @@ pub struct State {
     pub start_at_login: bool,
     pub appearance: String,
     pub settings: Settings,
-    pub system_runner: Option<Sender<crate::system::SystemAction>>,
+    pub system_runner: Option<Sender<(crate::system::SystemAction, Option<std::path::PathBuf>)>>,
+    /// The reoclo CLI system actions run. None until the first search finishes.
+    pub cli: Option<Cli>,
+    /// Starts a search, given the executable the daemon reports.
+    pub cli_finder: Option<Sender<Option<String>>>,
+    /// The daemon executable the last search was for, so a routine status does not search again.
+    pub cli_searched: Option<Option<String>>,
     pub window_handle: Option<rune::AppHandle<State>>,
     pub tray: Option<tray_icon::TrayIcon>,
     pub reduced_motion: bool,
@@ -174,6 +184,9 @@ impl Default for State {
             appearance: "system".into(),
             settings: Settings::default(),
             system_runner: None,
+            cli: None,
+            cli_finder: None,
+            cli_searched: None,
             window_handle: None,
             tray: None,
             reduced_motion: false,
@@ -258,6 +271,41 @@ impl State {
         self.name = TextEdit::new(name);
         self.target = TextEdit::new(target);
         self.pending_server = Some(server.to_owned());
+    }
+
+    /// Search for the CLI when the daemon reports a different executable, or always when `force`.
+    pub fn find_cli(&mut self, force: bool) {
+        let daemon = self.model.status.executable.clone();
+        if !force && self.cli_searched.as_ref() == Some(&daemon) {
+            return;
+        }
+        if let Some(finder) = &self.cli_finder
+            && finder.send(daemon.clone()).is_ok()
+        {
+            self.cli_searched = Some(daemon);
+        }
+    }
+
+    fn cli_version(&self) -> Option<&str> {
+        match &self.cli {
+            Some(Cli::Ready { version, .. }) => Some(version),
+            _ => None,
+        }
+    }
+
+    /// The daemon runs an older version than the CLI, which is what an upgrade leaves until a restart.
+    pub fn daemon_behind(&self) -> bool {
+        self.daemon_running()
+            && self
+                .cli_version()
+                .is_some_and(|cli| cli::older(&self.model.status.version, cli))
+    }
+
+    /// The installed hosts helper is older than the CLI. Only reinstalling updates its root-owned copy.
+    pub fn helper_behind(&self) -> Option<String> {
+        let helper = self.model.status.hosts.as_ref().filter(|h| h.installed)?;
+        let version = helper.version.clone()?;
+        cli::older(&version, self.cli_version()?).then_some(version)
     }
 
     pub fn relay_enabled(&self) -> bool {
@@ -349,6 +397,10 @@ impl State {
         self.notice = None;
         if page == Page::Hosts {
             self.request("GET", "/v1/hosts", None);
+        }
+        // The CLI can be upgraded while the app runs.
+        if page == Page::Settings {
+            self.find_cli(true);
         }
     }
 

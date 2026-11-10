@@ -177,6 +177,8 @@ pub struct TunnelList {
 #[serde(default)]
 pub struct Status {
     pub version: String,
+    /// The CLI binary the daemon runs from. Daemons before 0.104.0 do not say.
+    pub executable: Option<String>,
     pub pid: u32,
     pub uptime_seconds: u64,
     pub signed_in: Option<bool>,
@@ -208,6 +210,8 @@ pub struct Ca {
 #[serde(default)]
 pub struct Hosts {
     pub installed: bool,
+    /// The helper's version. Helpers before 0.103.1 do not say.
+    pub version: Option<String>,
     pub suffixes: Vec<String>,
     pub entries: usize,
     pub relay: Relay,

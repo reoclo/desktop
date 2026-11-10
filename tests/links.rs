@@ -486,7 +486,7 @@ fn https_without_the_hosts_helper_installs_it_before_continuing() {
     assert_eq!(state.link_step(), Some(LinkStep::Secure));
     assert!(matches!(
         actions.try_recv(),
-        Ok(SystemAction::SetupHosts(_))
+        Ok((SystemAction::SetupHosts(_), Some(_)))
     ));
 
     state.awaiting_helper = true;
@@ -561,11 +561,15 @@ fn the_service_step_runs_the_install_and_the_fake_runner_makes_no_changes() {
     state.system_runner = Some(runner);
     let mut rt = runtime(state);
     click(&mut rt, "setup-install-service");
-    let action = actions.try_recv().unwrap();
+    let (action, cli) = actions.try_recv().unwrap();
     assert_eq!(action, SystemAction::InstallDaemon);
+    assert_eq!(
+        cli.as_deref(),
+        Some(std::path::Path::new("/opt/homebrew/bin/reoclo"))
+    );
     assert!(
         FakeRunner
-            .run(&action)
+            .run(&action, cli.as_deref())
             .unwrap()
             .contains("no system changes")
     );
@@ -582,7 +586,7 @@ fn the_offline_start_button_installs_the_service() {
         rt.frame(1.0 / 60.0);
     }
     click(&mut rt, "confirm-action");
-    assert_eq!(actions.try_recv().unwrap(), SystemAction::InstallDaemon);
+    assert_eq!(actions.try_recv().unwrap().0, SystemAction::InstallDaemon);
 }
 
 #[test]

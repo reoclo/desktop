@@ -1,4 +1,5 @@
 use reoclo_desktop::{
+    cli::{Cli, Locator, MIN_VERSION},
     connection::Connection,
     control::Client,
     fake::FakeDaemon,
@@ -117,7 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_deref()
         .map(reoclo_desktop::ui::read_preferences)
         .unwrap_or_default();
-    let service_plist = (!demo).then(|| home.join("Library/LaunchAgents/com.reoclo.tunneld.plist"));
+    let daemon_plist = home.join("Library/LaunchAgents/com.reoclo.tunneld.plist");
+    let service_plist = (!demo).then(|| daemon_plist.clone());
     let service_installed = demo || service_plist.as_ref().is_some_and(|plist| plist.exists());
     let onboarded = demo || preferences.onboarded;
     let mut app = App::new(spec())
@@ -182,25 +184,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runner: Box<dyn SystemRunner> = if demo {
         Box::new(FakeRunner)
     } else {
-        let cli = executable
-            .parent()
-            .ok_or("Missing executable directory")?
-            .join("../Resources/reoclo");
         Box::new(MacRunner {
-            cli,
-            desktop: executable,
+            desktop: executable.clone(),
             launch_agent,
+            service_plist: daemon_plist.clone(),
         })
     };
     let system = reoclo_desktop::system::worker::start(runner, handles.clone());
-    for handle in &handles {
+    let finder = (!demo).then(|| {
+        reoclo_desktop::system::worker::find_cli(
+            Locator {
+                override_path: std::env::var_os("REOCLO_CLI").map(PathBuf::from),
+                service_plist: Some(daemon_plist),
+                home: home.clone(),
+                bundled: executable
+                    .parent()
+                    .map(|dir| dir.join("../Resources/reoclo")),
+            },
+            handles.clone(),
+        )
+    });
+    for (index, handle) in handles.iter().enumerate() {
         let requests = requests.clone();
         let system = system.clone();
         let main = main.clone();
+        // Only the main window searches; the result reaches both windows.
+        let finder = if index == 0 { finder.clone() } else { None };
         handle.update(move |s, _| {
             s.sender = Some(requests);
             s.system_runner = Some(system);
             s.window_handle = Some(main);
+            if demo {
+                s.cli = Some(Cli::Ready {
+                    path: PathBuf::from("reoclo"),
+                    version: MIN_VERSION.into(),
+                    bundled: true,
+                });
+            }
+            s.cli_finder = finder;
+            s.find_cli(true);
         });
     }
     tray::install(main.clone(), panel);

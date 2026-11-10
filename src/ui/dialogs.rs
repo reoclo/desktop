@@ -1,5 +1,10 @@
 use super::{State, primitives::*};
-use crate::{control::segment, system::SystemAction, theme::*};
+use crate::{
+    cli::{self, Cli, MIN_VERSION},
+    control::segment,
+    system::SystemAction,
+    theme::*,
+};
 use rune::{El, col, row, text};
 use rune_kit::{Button, Dialog, Kit};
 
@@ -35,7 +40,7 @@ pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
         ),
         "start" => (
             "Start local daemon?",
-            "Reoclo will install its background service with the bundled CLI. It starts now and every time you log in. Your saved tunnels remain owned by the daemon.",
+            "Reoclo will install its background service with the reoclo CLI on this Mac. It starts now and every time you log in. Your saved tunnels remain owned by the daemon.",
             "Start daemon",
             false,
         ),
@@ -208,17 +213,42 @@ impl State {
         if self.busy {
             return;
         }
-        if let Some(sender) = &self.system_runner {
-            match sender.send(action) {
-                Ok(()) => {
-                    self.busy = true;
-                    self.error = None;
-                }
-                Err(error) => self.error = Some(format!("System action could not start: {error}")),
-            }
-        } else {
+        let Some(sender) = self.system_runner.clone() else {
             self.notice = Some("Fixture preview. No system changes were made.".into());
             self.modal = None;
+            return;
+        };
+        let cli = match (&action, &self.cli) {
+            (SystemAction::StartAtLogin(_), _) => None,
+            (_, Some(Cli::Ready { path, .. })) => Some(path.clone()),
+            (_, found) => {
+                self.error = Some(cli_problem(found.as_ref()));
+                self.system_failed(&action);
+                return;
+            }
+        };
+        match sender.send((action, cli)) {
+            Ok(()) => {
+                self.busy = true;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(format!("System action could not start: {error}")),
         }
+    }
+}
+
+/// Why a system action cannot run without a usable CLI.
+fn cli_problem(found: Option<&Cli>) -> String {
+    match found {
+        Some(Cli::TooOld { path, version }) => format!(
+            "The reoclo CLI at {} is {version}, and this app needs {MIN_VERSION} or later. Run {} and try again.",
+            path.display(),
+            cli::upgrade_command(path)
+        ),
+        Some(Cli::Missing) => {
+            "No reoclo CLI was found. Install it with brew install reoclo/tap/reoclo and try again."
+                .into()
+        }
+        _ => "Reoclo is still looking for the reoclo CLI. Try again in a moment.".into(),
     }
 }
