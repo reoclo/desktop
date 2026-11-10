@@ -78,6 +78,7 @@ impl State {
             ("GET", "/v1/status") => {
                 self.model.status = serde_json::from_value(value)?;
                 self.refresh_service();
+                self.remember_relay();
                 self.find_cli(false);
             }
             ("GET", "/v1/foreground") => {
@@ -105,6 +106,7 @@ impl State {
                 }
                 self.model.host_entries = hosts.entries;
                 self.model.status.hosts = Some(hosts.helper);
+                self.remember_relay();
                 if after_install {
                     self.secure_after_helper();
                 }

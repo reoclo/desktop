@@ -588,6 +588,53 @@ fn a_terminal_forward_can_be_given_an_https_address() {
 }
 
 #[test]
+fn a_helper_reinstall_while_the_helper_is_down_keeps_the_relay_it_had() {
+    use reoclo_desktop::ui::read_preferences;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("preferences.json");
+    let mut state = State::fixture("hosts", "loaded").unwrap();
+    state.preferences_path = Some(path.clone());
+    let status = Request {
+        method: "GET".into(),
+        path: "/v1/status".into(),
+        body: None,
+    };
+    state.receive(
+        &status,
+        Ok(json!({"version": "0.104.1", "hosts": {"installed": true, "version": "0.104.1", "entries": 8, "suffixes": ["reoclo.test"], "relay": {"enabled": true, "listening": true, "port": 8443}}})),
+    );
+    assert!(read_preferences(&path).relay);
+
+    // A failed reinstall leaves the helper stopped, and a stopped helper reports no relay.
+    state.receive(
+        &status,
+        Ok(json!({"version": "0.104.1", "hosts": {"installed": false, "entries": 8, "relay": {"enabled": false, "listening": false}}})),
+    );
+    assert!(state.relay_enabled());
+    assert_eq!(
+        state.helper_setup(state.relay_enabled()).relay_port,
+        Some(state.settings.https_port)
+    );
+    assert!(read_preferences(&path).relay);
+}
+
+#[test]
+fn a_running_helper_with_the_relay_off_is_remembered_too() {
+    let mut state = State::fixture("hosts", "loaded").unwrap();
+    state.relay_choice = true;
+    state.receive(
+        &Request {
+            method: "GET".into(),
+            path: "/v1/hosts".into(),
+            body: None,
+        },
+        Ok(json!({"entries": [], "helper": {"installed": true, "entries": 0, "relay": {"enabled": false, "listening": false}}})),
+    );
+    assert!(!state.relay_choice);
+    assert!(!state.relay_enabled());
+}
+
+#[test]
 fn a_menu_bar_choice_is_remembered() {
     use reoclo_desktop::{model::MenuBarStyle, ui::read_preferences};
     let dir = tempfile::tempdir().unwrap();

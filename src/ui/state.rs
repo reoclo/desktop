@@ -121,6 +121,8 @@ pub struct State {
     pub preferences_path: Option<std::path::PathBuf>,
     /// Get started was finished once.
     pub onboarded: bool,
+    /// The relay setting a running helper last reported. Saved with the preferences.
+    pub relay_choice: bool,
     /// The launch agent the daemon install writes; its presence means the service starts at login.
     pub service_plist: Option<std::path::PathBuf>,
     pub service_installed: bool,
@@ -194,6 +196,7 @@ impl Default for State {
             tray_shown: None,
             preferences_path: None,
             onboarded: false,
+            relay_choice: false,
             service_plist: None,
             service_installed: false,
             securing: false,
@@ -253,6 +256,7 @@ impl State {
         let saved = Preferences {
             menu_bar: self.menu_bar,
             onboarded: self.onboarded,
+            relay: self.relay_choice,
         };
         if let Err(error) = write_preferences(&path, &saved) {
             self.error = Some(format!("Could not save your preference: {error}"));
@@ -308,12 +312,28 @@ impl State {
         cli::older(&version, self.cli_version()?).then_some(version)
     }
 
+    /// The relay setting of the running helper. While the helper is down, the one it last reported,
+    /// so reinstalling it does not turn the relay off.
     pub fn relay_enabled(&self) -> bool {
-        self.model
+        match self.model.status.hosts.as_ref() {
+            Some(hosts) if hosts.installed => hosts.relay.enabled,
+            _ => self.relay_choice,
+        }
+    }
+
+    /// Keep the relay setting of a running helper.
+    pub fn remember_relay(&mut self) {
+        if let Some(hosts) = self
+            .model
             .status
             .hosts
             .as_ref()
-            .is_some_and(|hosts| hosts.relay.enabled)
+            .filter(|hosts| hosts.installed)
+            && hosts.relay.enabled != self.relay_choice
+        {
+            self.relay_choice = hosts.relay.enabled;
+            self.save_preferences();
+        }
     }
 
     /// A reinstall keeps what the helper already allows and adds the trusted domains outside .localhost,

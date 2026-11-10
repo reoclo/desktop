@@ -127,6 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init(move || State {
             start_at_login: login_enabled,
             menu_bar: preferences.menu_bar,
+            relay_choice: preferences.relay,
             preferences_path,
             onboarded,
             modal: (!onboarded).then(|| "get-started".to_owned()),
