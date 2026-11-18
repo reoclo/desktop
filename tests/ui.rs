@@ -665,13 +665,13 @@ fn a_form_picker_can_be_searched_and_sets_its_value() {
     for _ in 0..30 {
         rt.frame(1.0 / 60.0);
     }
-    assert!(rt.state.kind_picker.open);
+    assert!(rt.state.kind_picker.is_open());
     let (x, y) = rt.find("kind-option-TCP").unwrap();
     rt.pointer_down(x, y);
     rt.pointer_up(x, y);
     rt.frame(0.02);
     assert_eq!(rt.state.kind, "tcp");
-    assert!(!rt.state.kind_picker.open);
+    assert!(!rt.state.kind_picker.is_open());
 }
 
 #[test]
@@ -694,5 +694,5 @@ fn port_picker_selects_the_service_and_preserves_its_target_port() {
     rt.pointer_up(x, y);
     rt.frame(0.02);
     assert_eq!(rt.state.target.text, "127.0.0.1:5432");
-    assert!(!rt.state.port_picker.open);
+    assert!(!rt.state.port_picker.is_open());
 }

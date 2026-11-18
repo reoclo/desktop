@@ -2,7 +2,7 @@
 
 A native macOS client for the Reoclo tunnel daemon. Rust and Rune render the window and menu-bar panel. The app speaks HTTP/1.1 and server-sent events over the daemon's Unix socket. It never stores Reoclo credentials.
 
-Rune and rune-kit are pinned to `938ba14f09bb3381946b3486ef8aa36363a3e8b2`. The matching Rust compiler is `1.99.1`, recorded in [rust-toolchain.toml](rust-toolchain.toml). Dependencies are locked in [Cargo.lock](Cargo.lock).
+Rune and rune-kit are pinned to `78efd4a7876b5478dd72033ce6fd2b2f13ab9f9a`. Cargo does not inherit Rune's own `[patch.crates-io]` table, so [Cargo.toml](Cargo.toml) repeats it at the same rev. When you move the pin, copy the table from Rune's root `Cargo.toml` at the new rev. The matching Rust compiler is `1.99.1`, recorded in [rust-toolchain.toml](rust-toolchain.toml). Dependencies are locked in [Cargo.lock](Cargo.lock).
 
 ## Development
 
