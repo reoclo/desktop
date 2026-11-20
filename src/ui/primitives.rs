@@ -96,6 +96,8 @@ pub fn title(name: &str, detail: Option<&str>, k: &Kit) -> El {
 /// A label over a machine value, set in mono.
 pub fn field(label: &str, value: &str, k: &Kit) -> El {
     col()
+        .w_full()
+        .min_w(0.0)
         .gap(XS)
         .child(text(label).font(LABEL).color(k.c.text_muted))
         .child(
@@ -111,7 +113,10 @@ pub fn field(label: &str, value: &str, k: &Kit) -> El {
                     },
                 )
                 .color(k.c.text_base)
-                .wrap()
+                .truncate_middle()
+                .help_when_truncated(value)
+                .w_full()
+                .min_w(0.0)
                 .selectable(true)
                 .selection_color(k.selection()),
         )

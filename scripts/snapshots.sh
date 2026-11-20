@@ -8,7 +8,7 @@ fi
 mkdir -p snapshots evidence
 cargo build --locked --bins
 app=./target/debug/reoclo-desktop
-for screen in tunnels add hosts certificates settings panel; do
+for screen in tunnels logs add hosts certificates settings panel; do
   for state in loaded loading empty terminal offline signed-out device-code error; do
     for theme in light dark; do
       name="$screen-$state-$theme"
@@ -19,6 +19,18 @@ for screen in tunnels add hosts certificates settings panel; do
   done
 done
 for theme in light dark; do
+  for spec in logs:filtered logs:paused logs:long tunnels:traffic-all tunnels:traffic-selected tunnels:traffic-terminal tunnels:retrying certificates:domain-invalid certificates:domain-valid; do
+    screen="${spec%:*}"
+    state="${spec#*:}"
+    for size in 1100x760 760x620 390x844; do
+      name="$screen-$state-$size-$theme"
+      "$app" --fixture --at 1 --screen "$screen" --state "$state" --theme "$theme" --size "$size" \
+        --snap "snapshots/$name.png" --tree "snapshots/$name.json"
+      printf 'CAPTURE %s\n' "$name"
+    done
+  done
+  "$app" --fixture --at 1 --state traffic-selected --reduced-motion --theme "$theme" \
+    --snap "snapshots/traffic-reduced-$theme.png" --tree "snapshots/traffic-reduced-$theme.json"
   for screen in settings panel; do
     for state in update-available update-ready update-error update-disabled; do
       "$app" --fixture --at 1 --screen "$screen" --state "$state" --theme "$theme" \

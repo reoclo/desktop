@@ -17,13 +17,15 @@ pub struct Request {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
     Tunnels,
+    Logs,
     Hosts,
     Certificates,
     Settings,
 }
 impl Page {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Tunnels,
+        Self::Logs,
         Self::Hosts,
         Self::Certificates,
         Self::Settings,
@@ -31,6 +33,7 @@ impl Page {
     pub fn name(self) -> &'static str {
         match self {
             Self::Tunnels => "Tunnels",
+            Self::Logs => "Logs",
             Self::Hosts => "Hosts",
             Self::Certificates => "Certificates",
             Self::Settings => "Settings",
@@ -49,6 +52,7 @@ pub enum ViewState {
 }
 
 pub struct State {
+    pub logs: super::logs::LogView,
     pub model: Model,
     pub page: Page,
     pub phase: ViewState,
@@ -61,9 +65,9 @@ pub struct State {
     pub pending: std::collections::BTreeSet<String>,
     pub compact: bool,
     pub viewport_width: f32,
+    pub graph_width: f32,
     pub clock_epoch: time::OffsetDateTime,
     pub clock_seconds: Option<f64>,
-    pub expanded_terminal: std::collections::BTreeSet<String>,
     pub socket_path: std::path::PathBuf,
     pub ca_path: Option<std::path::PathBuf>,
     pub ca_path_error: Option<String>,
@@ -148,6 +152,7 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            logs: super::logs::LogView::default(),
             model: Model::default(),
             page: Page::Tunnels,
             phase: ViewState::Loading,
@@ -160,9 +165,9 @@ impl Default for State {
             pending: Default::default(),
             compact: false,
             viewport_width: 1100.0,
+            graph_width: 800.0,
             clock_epoch: time::OffsetDateTime::now_utc(),
             clock_seconds: None,
-            expanded_terminal: Default::default(),
             socket_path: Default::default(),
             ca_path: None,
             ca_path_error: None,

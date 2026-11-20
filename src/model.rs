@@ -78,6 +78,7 @@ pub struct ForegroundTunnel {
     pub state: TunnelState,
     pub started_at: String,
     pub forwards: Vec<ForegroundForward>,
+    pub traffic: Option<TunnelTraffic>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

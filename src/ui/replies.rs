@@ -97,12 +97,6 @@ impl State {
                         ViewState::Loaded
                     };
                 }
-                if self.selected().is_none() {
-                    self.model.selected = self.model.tunnels.first().map(|t| t.name.clone());
-                    if let Some(name) = &self.model.selected {
-                        self.table.select(name);
-                    }
-                }
             }
             ("GET", "/v1/orgs") => {
                 self.orgs = serde_json::from_value::<OrgList>(value)?.orgs;

@@ -1,5 +1,6 @@
 mod approvals;
 mod certificates;
+mod compact_tunnels;
 mod data_state;
 mod dialogs;
 mod fault;
@@ -7,6 +8,7 @@ mod fixtures;
 mod form;
 mod hosts;
 mod links;
+mod logs;
 mod modal;
 mod onboarding;
 mod panel;
@@ -18,15 +20,17 @@ mod state;
 pub use fault::Fault;
 mod primitives;
 mod terminal_tunnels;
+mod traffic_graph;
 mod tunnel_detail;
 mod tunnel_health;
+mod tunnel_rows;
 mod tunnels;
 mod updates;
 use crate::theme::{self, *};
 pub use links::{Effect, LinkStep, PendingLink};
 pub use onboarding::SetupStatus;
 use rune::{Cx, El, col, text};
-use rune_kit::shell::{Sidebar, SidebarRow, SidebarSection, SplitView, Toolbar};
+use rune_kit::shell::{Sidebar, SidebarRow, SplitView, Toolbar};
 pub use state::{Page, Request, State, ViewState, read_preferences};
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
@@ -47,6 +51,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         return rune_kit::root(body, layer);
     }
     let content = match s.phase {
+        _ if s.page == Page::Logs && s.phase != ViewState::Loading => logs::view(s, &k),
         ViewState::Offline | ViewState::SignedOut | ViewState::Error
             if s.page == Page::Settings =>
         {
@@ -57,17 +62,16 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         {
             tunnels::view(s, &k)
         }
-        ViewState::Loaded | ViewState::Empty if s.has_tunnels() || s.page != Page::Tunnels => {
-            match s.page {
-                Page::Hosts => hosts::view(s, &k),
-                Page::Certificates => certificates::view(s, &k),
-                Page::Settings => settings::view(s, &k, &mut layer),
-                Page::Tunnels => tunnels::view(s, &k),
-            }
-        }
+        ViewState::Loaded | ViewState::Empty => match s.page {
+            Page::Hosts => hosts::view(s, &k),
+            Page::Certificates => certificates::view(s, &k),
+            Page::Settings => settings::view(s, &k, &mut layer),
+            Page::Tunnels => tunnels::view(s, &k),
+            Page::Logs => logs::view(s, &k),
+        },
         _ => primitives::data_state(s, &k),
     };
-    let sidebar = Sidebar::new()
+    let mut sidebar = Sidebar::new()
         .header(primitives::wordmark(&k).px(SM).py(MD))
         .footer(
             rune::row().child(
@@ -84,17 +88,17 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
                     .px(SM)
                     .key("open-docs"),
             ),
-        )
-        .section(
-            SidebarSection::new("This Mac").rows(Page::ALL.into_iter().map(|page| {
-                SidebarRow::new(page.name())
-                    .selected(s.page == page)
-                    .on_select(move |s: &mut State, _| s.show_page(page))
-                    .build(&k)
-                    .key(format!("nav-{}", page.name().to_lowercase()))
-            })),
-        )
-        .build(&k);
+        );
+    for page in Page::ALL {
+        sidebar = sidebar.child(
+            SidebarRow::new(page.name())
+                .selected(s.page == page)
+                .on_select(move |s: &mut State, _| s.show_page(page))
+                .build(&k)
+                .key(format!("nav-{}", page.name().to_lowercase())),
+        );
+    }
+    let sidebar = sidebar.build(&k);
     let status = if s.phase == ViewState::Offline {
         Some(primitives::indicator(primitives::Tone::Warning, "Daemon offline", &k).role("status"))
     } else if s.phase == ViewState::SignedOut {

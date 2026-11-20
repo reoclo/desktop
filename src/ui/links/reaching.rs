@@ -133,16 +133,29 @@ impl State {
     /// Runs before every frame. Returns true when something changed and the view must redraw.
     pub fn poll(&mut self, clock: f64, tx: &mut rune::Tx) -> bool {
         self.poll_updates(clock, tx);
-        let minute_changed = self.clock_seconds.is_some_and(|last| clock - last >= 60.0);
-        if self.clock_seconds.is_none() || minute_changed {
+        let watching = self.page == super::super::Page::Tunnels
+            && self.current_data()
+            && self.model.history.has_points();
+        let interval = if watching { 1.0 } else { 60.0 };
+        let clock_changed = self
+            .clock_seconds
+            .is_some_and(|last| clock - last >= interval);
+        if self.clock_seconds.is_none() || clock_changed {
             self.clock_seconds = Some(clock);
         }
-        if !self.model.approvals.is_empty() {
-            tx.wake_at(self.clock_seconds.unwrap_or(clock) + 60.0);
+        if watching {
+            let now = self.clock_epoch + time::Duration::seconds_f64(clock);
+            self.model.history.prune(now.unix_timestamp());
+        }
+        if !self.model.approvals.is_empty() || watching {
+            tx.wake_at(self.clock_seconds.unwrap_or(clock) + interval);
         }
         let notice = self.expire_notice(clock, tx);
         let link = self.expire_link(clock, tx);
         let effects = self.flush_effects(tx);
-        notice || link || effects || (minute_changed && !self.model.approvals.is_empty())
+        notice
+            || link
+            || effects
+            || (clock_changed && (watching || !self.model.approvals.is_empty()))
     }
 }

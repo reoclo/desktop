@@ -9,6 +9,16 @@ fn runtime(state: State) -> Runtime<State> {
 }
 
 fn click(rt: &mut Runtime<State>, key: &str) {
+    if key.starts_with("toggle-row-") {
+        rt.update(|_, tx| tx.scroll_into_view("saved-tunnels"));
+        for _ in 0..60 {
+            rt.frame(1.0 / 60.0);
+        }
+    }
+    rt.update(|_, tx| tx.scroll_into_view(key));
+    for _ in 0..60 {
+        rt.frame(1.0 / 60.0);
+    }
     let (x, y) = rt.find(key).unwrap();
     rt.pointer_down(x, y);
     rt.pointer_up(x, y);
@@ -190,12 +200,13 @@ fn selecting_a_tunnel_reveals_its_header_without_scrolling_the_page_title() {
 
 #[test]
 fn tunnel_events_exclude_other_tunnels_and_similarly_named_tunnels() {
-    let rt = runtime(State::fixture("tunnels", "events").unwrap());
+    let mut rt = runtime(State::fixture("tunnels", "events").unwrap());
+    click(&mut rt, "view-tunnel-logs");
     let lines: Vec<_> = rt
         .elements()
         .into_iter()
         .filter_map(|e| e.text)
-        .filter(|text| text.contains("UTC"))
+        .filter(|text| text.contains(" UTC "))
         .collect();
     assert_eq!(lines.len(), 2);
     assert!(lines.iter().all(|line| line.contains("grafana:")));

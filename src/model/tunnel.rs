@@ -41,7 +41,7 @@ impl TunnelState {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct TunnelTraffic {
     pub bytes_in: u64,
@@ -73,6 +73,14 @@ pub struct TunnelView {
     pub via: Option<String>,
     pub share: Option<Share>,
     pub traffic: TunnelTraffic,
+    pub retry: Option<Retry>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Retry {
+    pub attempt: u32,
+    #[serde(with = "time::serde::rfc3339")]
+    pub next_at: time::OffsetDateTime,
 }
 
 impl TunnelView {

@@ -1,21 +1,25 @@
 use super::{State, primitives::*};
-use crate::{control::segment, model::TunnelState, theme::*};
+use crate::{model::TunnelState, theme::*};
 use rune::{El, ScrollSpec, col, row, text};
-use rune_kit::{Button, Cell, Kit, Switch, Table, TableColumn, TableStyle};
-use std::borrow::Cow;
+use rune_kit::{Button, Kit, Table, TableColumn, TableStyle};
 
 const HEADER_HEIGHT: f32 = 32.0;
 const ROW_HEIGHT: f32 = 36.0;
 const MAX_VISIBLE_ROWS: usize = 8;
 
 pub fn view(s: &State, k: &Kit) -> El {
-    let saved = s.model.tunnels.len();
+    let saved = s.model.tunnels.len() + s.model.foreground.len();
     let active = s
         .model
         .tunnels
         .iter()
         .filter(|t| t.state == TunnelState::Active)
-        .count();
+        .count()
+        + s.model
+            .foreground
+            .iter()
+            .filter(|t| t.state == TunnelState::Active)
+            .count();
     let failed = s.model.tunnels.iter().filter(|t| t.state.failure()).count();
     let mut summary = row().gap(LG).center_y().child(
         text(if s.current_data() {
@@ -60,29 +64,31 @@ pub fn view(s: &State, k: &Kit) -> El {
         }
     }
     let mut body = col().w_full().gap(LG);
-    if s.current_data() {
-        if let Some(requests) = approvals(s, k) {
-            body = body.child(
-                requests
-                    .padding(MD)
-                    .border(RULE, k.c.border_base)
-                    .radius(k.radius.xl),
-            );
-        }
-        if let Some(running) = terminal_tunnels(s, k) {
-            body = body.child(
-                running
-                    .padding(MD)
-                    .border(RULE, k.c.border_base)
-                    .radius(k.radius.xl),
-            );
-        }
-    }
-    if saved > 0 {
-        body = body.child(table(s, k));
-    }
     if let Some(tunnel) = s.selected() {
         body = body.child(super::tunnel_detail::view(tunnel, s, k));
+    } else if let Some(detail) = super::tunnel_rows::terminal_detail(s, k) {
+        body = body.child(detail);
+    }
+    body = body.child(super::traffic_graph::view(s, k));
+    if s.current_data()
+        && let Some(requests) = approvals(s, k)
+    {
+        body = body.child(
+            requests
+                .padding(MD)
+                .border(RULE, k.c.border_base)
+                .radius(k.radius.xl),
+        );
+    }
+    if s.tunnel_row_count() > 0 {
+        body = body.child(table(s, k));
+    } else {
+        body = body.child(
+            text("No tunnels yet. Add a tunnel to reach a service.")
+                .font(BODY)
+                .color(k.c.text_muted)
+                .wrap(),
+        );
     }
     col()
         .key("tunnels-page")
@@ -126,128 +132,81 @@ fn table(s: &State, k: &Kit) -> El {
     let padding = if s.compact { LG } else { XL };
     let content =
         (s.viewport_width - s.sidebar.shown_width()).min(CONTENT_MAX) - padding * 2.0 - LG;
-    let labels = (content - STATE_WIDTH - ENDPOINT_MIN - 48.0).max(COLUMN_MIN * 2.0);
+    let labels = (content - STATE_WIDTH - ENDPOINT_MIN - ACTION_WIDTH).max(COLUMN_MIN * 2.0);
     let name_width = wanted_name.min((labels - wanted_server.min(labels / 2.0)).max(COLUMN_MIN));
     let server_width = wanted_server.min((labels - name_width).max(COLUMN_MIN));
     let cell_kit = k.clone();
-    Table::new(
+    let narrow = s.viewport_width < NARROW_WIDTH;
+    let row_height = if narrow {
+        CONTROL * 2.0 + SM
+    } else {
+        ROW_HEIGHT
+    };
+    let mut table = Table::new(
         |s: &State| &s.table,
         |s: &mut State| &mut s.table,
-        |s: &State| s.model.tunnels.len(),
-        |s: &State, i| Cow::Borrowed(s.model.tunnels[i].name.as_str()),
+        State::tunnel_row_count,
+        super::tunnel_rows::key,
     )
-    .name("Saved tunnels")
+    .name("Tunnels")
     .style(TableStyle {
         selected: k.c.layer_03,
-        row_height: ROW_HEIGHT,
+        row_height,
         header_height: HEADER_HEIGHT,
         header_font: LABEL,
         ..TableStyle::from_kit(k)
-    })
-    .column(
-        TableColumn::new("state", "State")
-            .width(STATE_WIDTH)
-            .sortable(),
-    )
-    .column(
-        TableColumn::new("name", "Name")
-            .width(name_width)
-            .sortable(),
-    )
-    .column(
-        TableColumn::new("server", "Server")
-            .width(server_width)
-            .sortable(),
-    )
-    .column(
-        TableColumn::new("endpoint", "Endpoint")
-            .flex(1.0)
-            .min(ENDPOINT_MIN),
-    )
-    .column(TableColumn::new("on", "On").width(48.0))
-    .cell(move |s: &State, i, column| {
-        let t = &s.model.tunnels[i];
-        match column {
-            "state" => Cell::el(status(
-                if s.current_data() {
-                    t.state
-                } else {
-                    TunnelState::Unknown
-                },
-                &cell_kit,
-            )),
-            "name" => Cell::el(
-                text(&t.name)
-                    .font(BODY)
-                    .color(cell_kit.c.text_base)
-                    .truncate()
-                    .help_when_truncated(&t.name)
-                    .min_w(0.0),
-            ),
-            "server" => Cell::el(
-                text(t.place())
-                    .font(if t.place() == "This Mac" { HINT } else { MONO })
-                    .color(if t.place() == "This Mac" {
-                        cell_kit.c.text_muted
-                    } else {
-                        cell_kit.c.text_base
-                    })
-                    .truncate_middle()
-                    .help_when_truncated(t.place())
-                    .min_w(0.0),
-            ),
-            "on" if s.current_data() => {
-                let path = format!(
-                    "/v1/tunnels/{}/{}",
-                    segment(&t.name),
-                    if t.enabled { "down" } else { "up" }
-                );
-                Cell::el(
-                    Switch::new(t.enabled)
-                        .label(format!("Run {}", t.name))
-                        .hide_label()
-                        .disabled(s.tunnel_pending(&t.name))
-                        .on_toggle(move |s: &mut State| s.request("POST", &path, None))
-                        .build(&cell_kit)
-                        .key(format!("toggle-row-{}", t.name)),
-                )
+    });
+    if narrow {
+        table = table.column(TableColumn::new("compact", "Tunnel").flex(1.0).min(0.0));
+    } else {
+        table = table
+            .column(
+                TableColumn::new("state", "State")
+                    .width(STATE_WIDTH)
+                    .sortable(),
+            )
+            .column(
+                TableColumn::new("name", "Name")
+                    .width(name_width)
+                    .sortable(),
+            )
+            .column(
+                TableColumn::new("server", "Server")
+                    .width(server_width)
+                    .sortable(),
+            )
+            .column(
+                TableColumn::new("endpoint", "Endpoint")
+                    .flex(1.0)
+                    .min(ENDPOINT_MIN),
+            );
+    }
+    table
+        .column(TableColumn::new("on", "On / Stop").width(ACTION_WIDTH))
+        .cell(move |s: &State, i, column| {
+            if column == "compact" {
+                super::compact_tunnels::cell(s, i, &cell_kit)
+            } else {
+                super::tunnel_rows::cell(s, i, column, &cell_kit)
             }
-            "on" => Cell::el(rune::el()),
-            _ => Cell::el(
-                text(t.endpoint())
-                    .font(if t.endpoint() == "Not listening" {
-                        HINT
-                    } else {
-                        MONO
-                    })
-                    .color(if t.state.available() && s.current_data() {
-                        cell_kit.c.text_base
-                    } else {
-                        cell_kit.c.text_muted
-                    })
-                    .truncate()
-                    .help_when_truncated(t.endpoint())
-                    .min_w(0.0),
-            ),
-        }
-    })
-    .on_select(|s: &mut State, name, tx| s.reveal_tunnel(name, tx))
-    .on_sort(|s: &mut State, column, direction, _| {
-        s.model.tunnels.sort_by(|a, b| {
-            direction.apply(match column {
-                "state" => a.state.label().cmp(b.state.label()),
-                "server" => a.place().cmp(b.place()),
-                _ => a.name.cmp(&b.name),
-            })
-        });
-    })
-    .build(s, k)
-    .h(HEADER_HEIGHT
-        + u16::try_from(s.model.tunnels.len().clamp(1, MAX_VISIBLE_ROWS))
-            .map(f32::from)
-            .unwrap_or(8.0)
-            * ROW_HEIGHT
-        + RULE)
-    .w_full()
-    .key("saved-tunnels")
+        })
+        .on_select(|s: &mut State, name, tx| s.reveal_tunnel(name, tx))
+        .on_sort(|s: &mut State, column, direction, _| {
+            s.model.tunnels.sort_by(|a, b| {
+                direction.apply(match column {
+                    "state" => a.state.label().cmp(b.state.label()),
+                    "server" => a.place().cmp(b.place()),
+                    _ => a.name.cmp(&b.name),
+                })
+            });
+        })
+        .build(s, k)
+        .h(HEADER_HEIGHT
+            + u16::try_from(s.tunnel_row_count().clamp(1, MAX_VISIBLE_ROWS))
+                .map(f32::from)
+                .unwrap_or(8.0)
+                * row_height
+            + RULE)
+        .w_full()
+        .key("saved-tunnels")
 }

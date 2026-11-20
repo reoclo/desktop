@@ -15,6 +15,7 @@ pub fn view(t: &TunnelView, s: &State, k: &Kit) -> El {
             .color(k.c.text_base),
     );
     if s.current_data()
+        && !t.state.available()
         && let Some(subtitle) = t.subtitle()
     {
         name = name.child(text(subtitle).font(HINT).color(k.c.text_muted).wrap());
@@ -38,6 +39,21 @@ pub fn view(t: &TunnelView, s: &State, k: &Kit) -> El {
         .child(header.key("tunnel-header"));
     let mut reason = col().w_full().gap(SM);
     if s.current_data() {
+        if let Some(retry) = &t.retry {
+            reason = reason.child(
+                text(format!(
+                    "Retry attempt {} at {:02}:{:02}:{:02} UTC.",
+                    retry.attempt,
+                    retry.next_at.hour(),
+                    retry.next_at.minute(),
+                    retry.next_at.second()
+                ))
+                .font(MONO)
+                .color(k.c.info.fg)
+                .role("status")
+                .key("tunnel-retry-state"),
+            );
+        }
         if let Some(detail) = &t.detail {
             reason = reason.child(alert(detail, k).key("tunnel-reason"));
         }
@@ -54,53 +70,6 @@ pub fn view(t: &TunnelView, s: &State, k: &Kit) -> El {
     } else {
         details = details.child(reason).child(actions(t, s, k)).child(facts);
     }
-    let events: Vec<_> = s
-        .model
-        .recent_logs
-        .iter()
-        .filter(|entry| {
-            entry
-                .line
-                .split(|c: char| !c.is_alphanumeric() && !matches!(c, '-' | '_' | '.'))
-                .any(|word| word == t.name)
-        })
-        .collect();
-    if !events.is_empty() {
-        let mut copy = String::new();
-        let mut log = col().w_full().gap(XS).child(
-            text(format!("Daemon events for {}", t.name))
-                .role("heading")
-                .font(LABEL)
-                .color(k.c.text_muted),
-        );
-        for entry in events.iter().rev().take(4).rev() {
-            let at = entry.received;
-            let line = format!(
-                "{:02}:{:02}:{:02} UTC {}",
-                at.hour(),
-                at.minute(),
-                at.second(),
-                entry.line
-            );
-            copy.push_str(&line);
-            copy.push('\n');
-            log = log.child(
-                text(line)
-                    .font(MONO)
-                    .color(k.c.text_base)
-                    .wrap()
-                    .selectable(true),
-            );
-        }
-        details = details.child(log).child(
-            row().child(
-                Button::new("Copy events")
-                    .on_press_tx(move |_: &mut State, tx| tx.copy(&copy))
-                    .secondary(k)
-                    .key("copy-events"),
-            ),
-        );
-    }
     details
 }
 
@@ -114,7 +83,6 @@ fn facts(t: &TunnelView, s: &State, k: &Kit) -> El {
         } else {
             FACT_WIDTH * 4.0 + LG * 3.0
         })
-        .child(field("Kind", &t.kind.to_uppercase(), k))
         .child(field(
             "Target",
             t.target
@@ -124,37 +92,26 @@ fn facts(t: &TunnelView, s: &State, k: &Kit) -> El {
             k,
         ))
         .child(field("Server", t.place(), k))
-        .child(field("Transport", t.via.as_deref().unwrap_or("reoclo"), k));
-    let traffic = if t.traffic.bytes_in == 0 && t.traffic.bytes_out == 0 && t.traffic.streams == 0 {
-        text("No traffic yet").font(HINT).color(k.c.text_muted)
-    } else {
-        row()
-            .gap(LG)
-            .child(
-                field(
-                    "Traffic in / out",
-                    &format!(
-                        "{} / {}",
-                        bytes(t.traffic.bytes_in),
-                        bytes(t.traffic.bytes_out)
-                    ),
-                    k,
-                )
-                .w(FACT_WIDTH),
-            )
-            .child(field("Streams", &t.traffic.streams.to_string(), k).w(FACT_WIDTH))
-    };
+        .child(field(
+            "Transport",
+            &format!(
+                "{} · {}",
+                t.kind.to_uppercase(),
+                t.via.as_deref().unwrap_or("reoclo")
+            ),
+            k,
+        ))
+        .child(field("Streams", &t.traffic.streams.to_string(), k));
     col()
         .key("tunnel-facts")
         .gap(MD)
         .w_full()
         .child(field("Endpoint", t.endpoint(), k))
         .child(fields)
-        .child(traffic)
 }
 
 fn actions(t: &TunnelView, s: &State, k: &Kit) -> El {
-    let mut actions = row().w_full().gap(SM);
+    let mut actions = row().w_full().gap(SM).flex_wrap();
     if s.current_data() {
         if t.state == TunnelState::NeedsSignIn {
             actions = actions.child(
@@ -163,10 +120,10 @@ fn actions(t: &TunnelView, s: &State, k: &Kit) -> El {
                     .primary(k)
                     .key("tunnel-sign-in"),
             );
-        } else if t.state.failure() {
+        } else if t.state.failure() || t.retry.is_some() {
             let path = format!("/v1/tunnels/{}/up", segment(&t.name));
             actions = actions.child(
-                Button::new("Try again")
+                Button::new("Retry now")
                     .disabled(s.tunnel_pending(&t.name))
                     .on_press(move |s: &mut State| s.request("POST", &path, None))
                     .primary(k)
@@ -214,6 +171,13 @@ fn actions(t: &TunnelView, s: &State, k: &Kit) -> El {
             .secondary(k)
             .key("copy-endpoint"),
     );
+    let name = t.name.clone();
+    actions = actions.child(
+        Button::new("View logs")
+            .on_press(move |s: &mut State| s.show_logs(&name))
+            .secondary(k)
+            .key("view-tunnel-logs"),
+    );
     if s.current_data() {
         if t.kind != "local" {
             actions = actions.child(
@@ -231,14 +195,4 @@ fn actions(t: &TunnelView, s: &State, k: &Kit) -> El {
         );
     }
     actions
-}
-
-fn bytes(value: u64) -> String {
-    if value >= 1024 * 1024 {
-        format!("{} MiB", value / (1024 * 1024))
-    } else if value >= 1024 {
-        format!("{} KiB", value / 1024)
-    } else {
-        format!("{value} B")
-    }
 }

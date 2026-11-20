@@ -31,6 +31,10 @@ pub struct Client {
 }
 
 impl Client {
+    pub fn socket_path(&self) -> &Path {
+        &self.path
+    }
+
     pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),

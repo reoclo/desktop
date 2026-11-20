@@ -10,7 +10,7 @@ It is a native app written in Rust and drawn with [Rune](https://github.com/anom
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/tunnels-dark.png">
-  <img alt="The Tunnels window with a pending agent approval above the table of saved tunnels, each row showing its state, server, endpoint and an on switch" src="docs/images/tunnels-light.png">
+  <img alt="The Tunnels window with combined traffic above one table of saved and terminal tunnels" src="docs/images/tunnels-light.png">
 </picture>
 
 ## What you can do
@@ -20,7 +20,24 @@ It is a native app written in Rust and drawn with [Rune](https://github.com/anom
 - **Serve your own apps on HTTPS.** A local tunnel gives a service on your Mac a hostname under a domain you trust, such as `https://app.reoclo.test`.
 - **Work from the menu bar.** The panel lists every tunnel by server, with its switch and buttons to open or copy the endpoint. The menu bar item can show the active count, or a meter with one bar per tunnel.
 - **Keep coding agents in check.** Agents using Reoclo's MCP tools can open forward tunnels on their own. Reverse tunnels, public binds, hostname changes and tailnet shares wait for your approval in the app.
-- **See tunnels started in a terminal.** A `reoclo tunnel <server> -L ...` session appears with its real ports, so you can stop it or add HTTPS for the same target.
+- **See tunnels started in a terminal.** A `reoclo tunnel <server> -L ...` session appears in the main table. Each forward has its real ports and Add HTTPS. Stop asks before ending the terminal session.
+- **Inspect traffic and recovery.** The top of Tunnels shows the last 15 minutes of traffic. Select a row for its details and traffic, or choose All tunnels for the combined graph. Scheduled retries show their attempt and next time, with Retry now.
+- **Read daemon logs.** Logs combines live events with `tunneld.log`, using virtualized monospace rows and UTC timestamps. Filter by a tunnel's exact name or search the text. Pause freezes the view while collection continues. Copy exports the filtered lines, and Show log in Finder reveals the file.
+
+### Traffic and logs
+
+Traffic history stays in memory while the app runs. It uses one-second daemon events, keeps at most 900 samples per tunnel and handles counter resets without spikes. Terminal traffic requires a terminal session started with CLI 0.116.0 or later.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/traffic-dark.png">
+  <img alt="A selected tunnel with its details and incoming and outgoing traffic above the table" src="docs/images/traffic-light.png">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logs-dark.png">
+  <img alt="The Logs page filtered to one tunnel, with text search and follow controls" src="docs/images/logs-light.png">
+</picture>
+
+Logs retains the latest 10,000 lines. The file tail reads at most 2 MiB at a time and follows rotation. Live events and their matching file entries appear once. The file is `tunneld.log` in the tunnel directory, alongside the `run` directory containing `tunneld.sock`.
 
 ### The menu-bar panel
 
@@ -41,6 +58,8 @@ Pick an organization and a server, then choose one of the ports Reoclo scanned o
 ### Local HTTPS
 
 Certificates manages the local certificate authority and the domains it may sign for. Hosts keeps the hostnames that point at your Mac.
+
+Certificate trust accepts `.test`, `.localhost`, `.internal`, `.home.arpa`, `.example` and `.invalid`, including their subdomains. The field validates as you type, and CLI 0.116.0 enforces the same rule at the trust boundary. Public DNS domains and `.local` are rejected. Existing unsupported suffixes remain visible so you can remove them before trusting a replacement CA.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/certificates-dark.png">
@@ -138,9 +157,11 @@ cargo run --bin reoclo-desktop -- \
   --snap snapshots/tunnels.png --tree snapshots/tunnels.json
 ```
 
-Screens: `tunnels`, `add`, `edit`, `hosts`, `certificates`, `settings`, `panel`.
+Screens: `tunnels`, `logs`, `add`, `edit`, `hosts`, `certificates`, `settings`, `panel`.
 Data states: `loaded`, `loading`, `empty`, `terminal`, `offline`, `signed-out`, `device-code`, `error`. Update fixtures: `update-available`, `update-ready`, `update-error`, `update-disabled`.
 Tunnel-state fixtures accept the daemon's twelve state names, and `--reduced-motion` forces reduced motion.
+
+Review fixtures include `traffic-all`, `traffic-selected`, `traffic-terminal` and `retrying` on Tunnels. Use `long` on Logs to exercise virtualization; its `filtered` and `paused` fixtures exercise the controls. Certificates supports `domain-valid` and `domain-invalid`. The snapshot script captures both themes at 1100 × 760 and 760 × 620. A 390 × 844 capture checks narrow content behavior.
 
 For an explicit fake socket, run `cargo run --bin fake-daemon -- /path/to/socket`. It prints `READY` once bound; send `quit` on stdin to stop it. Then pass `--socket /path/to/socket` to the app.
 
@@ -153,6 +174,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 bash scripts/snapshots.sh
+bash scripts/readme-images.sh
 ```
 
 The snapshot script renders every screen and data state in both themes, at the compact and wide window sizes, plus every tunnel state and frames from scrolling and motion. `snapshot-check` then verifies PNG signatures, viewport sizes, element roles and forbidden dash characters. It complements looking at the images rather than replacing it.

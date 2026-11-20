@@ -60,31 +60,37 @@ pub fn view(s: &State, k: &Kit) -> El {
         detail_heading = detail_heading.child(bar(k, LG).w(160.0));
     }
     let layout = match s.page {
-        Page::Tunnels => col()
-            .gap(LG)
-            .child(
-                col()
-                    .gap(0.0)
-                    .child(bar(k, 32.0))
+        Page::Tunnels => {
+            let row_height = if s.viewport_width < NARROW_WIDTH {
+                CONTROL * 2.0 + SM
+            } else {
+                CONTROL
+            };
+            let mut layout = col().gap(LG);
+            if s.selected().is_some() {
+                layout = layout
+                    .child(detail_heading)
                     .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL)),
-            )
-            .child(bar(k, RULE))
-            .child(detail_heading)
-            .child(bar(k, CONTROL))
-            .child(
-                col()
-                    .equal_columns(if s.compact { 2 } else { 4 })
-                    .w_full()
-                    .max_w(FACT_WIDTH * 4.0 + LG * 3.0)
-                    .gap(LG)
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL)),
-            )
-            .child(bar(k, CONTROL)),
+                    .child(
+                        col()
+                            .equal_columns(if s.compact { 2 } else { 4 })
+                            .w_full()
+                            .gap(LG)
+                            .children((0..4).map(|_| bar(k, CONTROL))),
+                    )
+                    .child(bar(k, CONTROL));
+            }
+            layout
+                .child(bar(k, XL))
+                .child(bar(k, GRAPH_HEIGHT))
+                .child(bar(k, LG))
+                .child(
+                    col()
+                        .gap(0.0)
+                        .child(bar(k, XXL))
+                        .children((0..4).map(|_| bar(k, row_height))),
+                )
+        }
         Page::Hosts => col()
             .gap(XL)
             .child(bar(k, CONTROL))
@@ -107,7 +113,8 @@ pub fn view(s: &State, k: &Kit) -> El {
             )
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL))
-            .child(bar(k, CONTROL)),
+            .child(bar(k, CONTROL))
+            .child(bar(k, LG)),
         Page::Settings => col()
             .gap(XL)
             .child(super::settings::updates_section::view(s, k))
@@ -122,6 +129,17 @@ pub fn view(s: &State, k: &Kit) -> El {
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL)),
+        Page::Logs => col()
+            .gap(LG)
+            .child(
+                col()
+                    .equal_columns(if s.compact { 1 } else { 2 })
+                    .gap(SM)
+                    .child(bar(k, CONTROL))
+                    .child(bar(k, CONTROL)),
+            )
+            .child(bar(k, CONTROL))
+            .child(bar(k, LOG_ROW_HEIGHT * 12.0)),
     };
     body = body
         .child(layout.pr(if s.page == Page::Tunnels { LG } else { 0.0 }))

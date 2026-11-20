@@ -12,13 +12,15 @@ app=./target/debug/reoclo-desktop
 out=docs/images
 mkdir -p "$out"
 for theme in light dark; do
-  "$app" --fixture --screen tunnels --state loaded --theme "$theme" --snap "$out/tunnels-$theme.png"
+  "$app" --fixture --screen tunnels --state traffic-all --theme "$theme" --snap "$out/tunnels-$theme.png"
+  "$app" --fixture --screen tunnels --state traffic-selected --theme "$theme" --snap "$out/traffic-$theme.png"
+  "$app" --fixture --screen logs --state filtered --theme "$theme" --snap "$out/logs-$theme.png"
   "$app" --fixture --screen panel --state loaded --theme "$theme" --snap "$out/panel-$theme.png"
   "$app" --fixture --screen settings --state update-ready --theme "$theme" --at 1 --snap "$out/settings-$theme.png"
   "$app" --fixture --screen panel --state update-ready --theme "$theme" --at 1 --snap "$out/panel-update-$theme.png"
   "$app" --fixture --screen add --state loaded --theme "$theme" --snap "$out/add-tunnel-$theme.png"
   "$app" --fixture --screen get-started --theme "$theme" --snap "$out/get-started-$theme.png"
-  "$app" --fixture --screen certificates --state loaded --theme "$theme" --snap "$out/certificates-$theme.png"
+  "$app" --fixture --screen certificates --state domain-valid --theme "$theme" --snap "$out/certificates-$theme.png"
   "$app" --fixture --screen hosts --state loaded --theme "$theme" --snap "$out/hosts-$theme.png"
 done
 if command -v pngquant >/dev/null; then

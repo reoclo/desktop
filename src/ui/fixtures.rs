@@ -1,6 +1,7 @@
 use super::{Page, State, ViewState, links::PendingLink};
 use crate::{cli::Cli, fake::Fixture, link, model::*, reducer::Model};
 use rune::TextEdit;
+mod review;
 
 impl State {
     pub fn fixture(page: &str, case: &str) -> Result<Self, serde_json::Error> {
@@ -34,6 +35,7 @@ impl State {
             ..Default::default()
         };
         s.page = match page {
+            "logs" => Page::Logs,
             "hosts" => Page::Hosts,
             "certificates" => Page::Certificates,
             "settings" => Page::Settings,
@@ -45,10 +47,10 @@ impl State {
             last_checked: Some("2026-11-20 04:00 UTC".into()),
             phase: match case {
                 "update-available" => crate::update::Phase::Available {
-                    version: "0.6.0".into(),
+                    version: "0.7.0".into(),
                 },
                 "update-ready" => crate::update::Phase::Ready {
-                    version: "0.6.0".into(),
+                    version: "0.7.0".into(),
                     notes: "More reliable tunnel recovery. Improved keyboard navigation.".into(),
                 },
                 "update-error" => crate::update::Phase::Failed(
@@ -147,20 +149,7 @@ impl State {
                 "The daemon rejected the request. Check the local daemon log and retry.".into(),
             );
         }
-        if case == "events" {
-            s.model.recent_logs = [
-                "grafana: listener ready on port 8443",
-                "pool background-worker: active",
-                "grafana: upstream connection refused",
-                "grafana-backup: listener stopped",
-            ]
-            .into_iter()
-            .map(|line| crate::reducer::LogEntry {
-                received: s.clock_epoch,
-                line: line.into(),
-            })
-            .collect();
-        }
+        review::apply(&mut s, page, case)?;
         if case == "shared-failure" || case == "long-names" {
             for tunnel in &mut s.model.tunnels {
                 tunnel.server = "agent-worker-prod-01".into();
@@ -230,7 +219,9 @@ impl State {
             .map(PendingLink::new);
             s.modal = Some("open-link".into());
         }
-        s.table.select("grafana");
+        if let Some(name) = &s.model.selected {
+            s.table.select(name);
+        }
         Ok(s)
     }
 }

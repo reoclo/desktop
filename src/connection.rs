@@ -5,9 +5,11 @@ use crate::{
 use rune::AppHandle;
 use std::sync::mpsc::{self, Sender};
 use std::time::Duration;
+mod logs;
 
 pub struct Connection {
     stop: Sender<()>,
+    log_stop: Sender<()>,
 }
 
 fn deliver(
@@ -51,6 +53,7 @@ pub fn backoff(attempt: u32) -> Duration {
 
 impl Connection {
     pub fn start(client: Client, handles: Vec<AppHandle<State>>) -> (Self, Sender<Request>) {
+        let log_stop = logs::start(client.socket_path(), handles.clone());
         let (send, receive) = mpsc::channel::<Request>();
         let (stop, stopped) = mpsc::channel();
         let requests = client.clone();
@@ -117,12 +120,15 @@ impl Connection {
                 }
             }
         });
-        (Self { stop }, send)
+        (Self { stop, log_stop }, send)
     }
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
+        if let Err(error) = self.log_stop.send(()) {
+            eprintln!("Log worker already stopped: {error}");
+        }
         if let Err(error) = self.stop.send(()) {
             eprintln!("Event worker already stopped: {error}");
         }

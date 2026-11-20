@@ -2,6 +2,7 @@ use super::{State, primitives::*};
 use crate::theme::*;
 use rune::{El, ScrollSpec, col, row, text};
 use rune_kit::{Button, ControlSize, Kit, TextInput};
+mod domain;
 
 pub fn view(s: &State, k: &Kit) -> El {
     let ca = s.model.status.ca.as_ref();
@@ -122,27 +123,32 @@ pub fn view(s: &State, k: &Kit) -> El {
         );
     }
     if ca.is_some() {
-        let ready = !s.busy && !s.trust_domain.text.trim().is_empty();
+        let validated = domain::parse(&s.trust_domain.text);
+        let ready = !s.busy && validated.is_ok();
+        let validation = match validated {
+            Ok(domain) => format!("Certificates can cover {domain} and its subdomains."),
+            Err(error) => error.to_string(),
+        };
         body = body.child(
             col()
                 .w_full()
                 .gap(MD)
                 .child(text("Trust another domain").role("heading").font(HEADING).color(k.c.text_base))
                 .child(
-                    text("Let the CA sign for names under a domain you choose, such as internal or agents.localhost. macOS asks for your password.")
+                    text("Trust a reserved domain, such as reoclo.test or agents.localhost. macOS asks for your password.")
                         .font(BODY)
                         .color(k.c.text_muted)
                         .wrap()
                         .max_w(640.0),
                 )
                 .child(
-                    row()
+                    row().flex_wrap()
                         .gap(SM)
                         .center_y()
                         .child(
                             TextInput::new(&s.trust_domain)
                                 .label("Domain to trust")
-                                .placeholder("internal")
+                                .placeholder("reoclo.test")
                                 .width(Some(FORM_COLUMN))
                                 .on_edit(|s: &mut State| &mut s.trust_domain)
                                 .on_submit(|s: &mut State, _| trust_domain(s))
@@ -157,7 +163,10 @@ pub fn view(s: &State, k: &Kit) -> El {
                                 .secondary(k)
                                 .key("trust-domain"),
                         ),
-                ),
+                )
+                .child(text(validation).font(HINT)
+                    .color(if s.trust_domain.text.is_empty() || ready { k.c.text_muted } else { k.c.danger.fg })
+                    .wrap().role("status").key("trust-domain-validation")),
         );
     }
     k.scroll_bar(
@@ -173,8 +182,7 @@ pub fn view(s: &State, k: &Kit) -> El {
 }
 
 fn trust_domain(s: &mut State) {
-    let domain = s.trust_domain.text.trim().to_ascii_lowercase();
-    if !domain.is_empty() {
+    if let Ok(domain) = domain::parse(&s.trust_domain.text) {
         s.request(
             "POST",
             "/v1/ca/trust",
@@ -214,6 +222,14 @@ fn suffix_list(suffixes: &[String], s: &State, k: &Kit) -> El {
                 .color(k.c.text_base)
                 .selectable(true),
         );
+        if domain::parse(suffix).is_err() {
+            line = line.child(
+                text("Remove before trusting a new CA")
+                    .font(HINT)
+                    .color(k.c.warning.fg)
+                    .wrap(),
+            );
+        }
         if suffix != "reoclo.localhost" {
             let target = suffix.clone();
             line = line.child(
