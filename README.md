@@ -78,7 +78,7 @@ You need macOS 13 or later and a [Reoclo](https://reoclo.com) account. You can c
 
 ## Install
 
-Download the disk image from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is not notarized yet, so the first time you open it, right-click Reoclo and choose **Open**.
+Download the disk image from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is not notarized yet, so macOS blocks it the first time you open it. Open **System Settings**, go to **Privacy & Security**, and choose **Open Anyway** next to the message about Reoclo, then confirm with your password. You only do this once.
 
 ## First run
 
