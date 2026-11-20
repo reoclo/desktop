@@ -18,11 +18,11 @@ It is a native app written in Rust and drawn with [Rune](https://github.com/anom
 - **Reach a server's private services.** Forward a database or an internal dashboard to a port on your Mac, then connect with the tools you already use. Every saved tunnel has its own switch.
 - **Open internal sites over HTTPS.** An HTTPS tunnel gets a trusted certificate and a hostname such as `https://grafana.prod-1.reoclo.localhost:8443`. Turn on the port 443 relay and the port drops out of the address.
 - **Serve your own apps on HTTPS.** A local tunnel gives a service on your Mac a hostname under a domain you trust, such as `https://app.reoclo.test`.
-- **Work from the menu bar.** The panel lists every tunnel by server, with its switch and buttons to open or copy the endpoint. The menu bar item can show the active count, or a meter with one bar per tunnel.
+- **Work from the menu bar.** The panel puts agent approvals and failed tunnels first, then gives every tunnel, saved or terminal, one line with its endpoint and switch. Press an endpoint to copy it. The menu bar item can show the active count, or a meter with one bar per tunnel.
 - **Keep coding agents in check.** Agents using Reoclo's MCP tools can open forward tunnels on their own. Reverse tunnels, public binds, hostname changes and tailnet shares wait for your approval in the app.
 - **See tunnels started in a terminal.** A `reoclo tunnel <server> -L ...` session appears in the main table. Each forward has its real ports and Add HTTPS. Stop asks before ending the terminal session.
 - **Inspect traffic and recovery.** The top of Tunnels shows the last 15 minutes of traffic. Select a row for its details and traffic, or choose All tunnels for the combined graph. Scheduled retries show their attempt and next time, with Retry now.
-- **Read daemon logs.** Logs combines live events with `tunneld.log`, using virtualized monospace rows and UTC timestamps. Filter by a tunnel's exact name or search the text. Pause freezes the view while collection continues. Copy exports the filtered lines, and Show log in Finder reveals the file.
+- **Read daemon logs.** Logs combines live events with `tunneld.log`, using virtualized monospace rows and UTC timestamps. Pick a tunnel from a searchable list, or search the text. Pause freezes the view while collection continues. Copy exports the filtered lines, and Show log in Finder reveals the file.
 
 ### Traffic and logs
 
@@ -43,8 +43,10 @@ Logs retains the latest 10,000 lines. The file tail reads at most 2 MiB at a tim
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/panel-dark.png">
-  <img width="340" alt="The menu-bar panel listing tunnels by server, each with its state, endpoint and switch" src="docs/images/panel-light.png">
+  <img width="340" alt="The menu-bar panel with an approval and a failed tunnel at the top, then one line per tunnel with its endpoint and switch or Stop" src="docs/images/panel-light.png">
 </picture>
+
+The header shows how many tunnels are active and the combined traffic of the last 15 minutes. Approvals and a ready update sit above the tunnels, and a tunnel that failed moves to the top with its reason. Each tunnel takes one line: a state mark, its name, the endpoint, and its switch. A tunnel started in a terminal shows its server with a Terminal tag, and Stop in place of the switch. Twelve tunnels fit without scrolling.
 
 ### Adding a tunnel
 
@@ -72,23 +74,45 @@ Certificate trust accepts `.test`, `.localhost`, `.internal`, `.home.arpa`, `.ex
 
 ## Requirements
 
-You need macOS 13 or later and a [Reoclo](https://reoclo.com) account. Release downloads include a universal Reoclo CLI. If you already have the CLI installed, the app uses that copy. Keep it current with Homebrew:
-
-```sh
-brew install reoclo/tap/reoclo
-```
+You need macOS 13 or later and a [Reoclo](https://reoclo.com) account. You can create the account when you log in. Nothing else is required: the app carries its own copy of the Reoclo command, so you never need a terminal.
 
 ## Install
 
-Download the DMG from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is not notarized yet, so on first open, right-click Reoclo and choose **Open**.
+Download the disk image from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is not notarized yet, so macOS blocks it the first time you open it. Open **System Settings**, go to **Privacy & Security**, and choose **Open Anyway** next to the message about Reoclo, then confirm with your password. You only do this once.
 
-You can also install it with Homebrew:
+## First run
+
+The first time Reoclo opens, a short setup walks you through everything. The steps are listed on the left, and each one tells you what is about to happen before it happens.
+
+1. **Log in.** Reoclo starts its background service and opens your browser. Check that the page shows the code on screen, then choose Approve. If you opened a link from a teammate first, Reoclo keeps it and opens it when setup is done.
+2. **Set up this Mac.** Reoclo trusts its own certificate so your servers' pages open without warnings, then installs a small helper so their addresses work like any website. macOS asks for your login password or Touch ID, and then for an administrator password. Reoclo never sees either one. You can choose **Set up later** and finish from Settings.
+3. **Tools for your agents.** Reoclo puts its own `reoclo` command where coding agents look for it. If the command is already on your Mac, for example from Homebrew, Reoclo leaves it alone and uses it. Restart any agent that is already open so it finds the command.
+4. **Ready for your agent.** Copy the prompt and paste it into Claude Code, Codex or Cursor. If Claude Code or Codex is on this Mac, **Connect your agents** adds Reoclo to them in one click and shows the result for each one.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/first-run-dark.png">
+  <img alt="The first run screen asking you to approve this Mac in your browser, with the four setup steps listed on the left" src="docs/images/first-run-light.png">
+</picture>
+
+Press **Done** to finish. Settings has **Run setup again** if you want to see it once more.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/first-run-ready-dark.png">
+  <img alt="The last first run screen with the prompt to copy and Connect your agents listing Claude Code and Codex" src="docs/images/first-run-ready-light.png">
+</picture>
+
+## Other ways to install
+
+If you use Homebrew, you can install the app and the command yourself:
 
 ```sh
+brew install reoclo/tap/reoclo
 brew install --cask reoclo/tap/reoclo-desktop
 ```
 
-To build from source, install [rustup](https://rustup.rs) and [uv](https://docs.astral.sh/uv/). Rustup installs the pinned compiler on the first build; uv builds the disk image. Install the CLI with the command above first.
+The app uses a Homebrew copy of `reoclo` when there is one and keeps it out of the way of its own. Keep it current with `brew upgrade reoclo`.
+
+To build from source, install [rustup](https://rustup.rs) and [uv](https://docs.astral.sh/uv/). Rustup installs the pinned compiler on the first build; uv builds the disk image. Install the command with the Homebrew line above first.
 
 ```sh
 git clone https://github.com/reoclo/desktop.git
@@ -100,18 +124,11 @@ open /Applications/Reoclo.app
 
 The app is signed ad hoc, and `dist/Reoclo.dmg` holds the same app.
 
-On first launch, **Get started** installs the background service and signs you in. Secure web addresses are optional, and you can set them up later from Settings.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/get-started-dark.png">
-  <img alt="The Get started dialog with its setup steps, starting with the background service" src="docs/images/get-started-light.png">
-</picture>
-
 ## How it works
 
 The daemon holds the tunnels, your sign-in, the certificates and the privileged helpers. The app talks to it over its Unix socket with HTTP and server-sent events, so quitting the app leaves your tunnels running.
 
-Actions that change the system, such as installing the background service or the hosts helper, run the Reoclo CLI already on your Mac. That way `brew upgrade reoclo` reaches the daemon. Unless `REOCLO_CLI` names one, the app uses the CLI the daemon reports, then the one in the daemon's launch agent, then the standard install folders, Homebrew's first. The copy bundled in the app runs only when none of those exists, and an installed CLI older than 0.103.1 gets an upgrade prompt.
+Actions that change the system, such as installing the background service or the hosts helper, run the Reoclo CLI already on your Mac. That way `brew upgrade reoclo` reaches the daemon. Unless `REOCLO_CLI` names one, the app uses the CLI the daemon reports, then the one in the daemon's launch agent, then the standard install folders, Homebrew's first. The copy bundled in the app runs only when none of those exists, and an installed CLI older than 0.103.1 gets an upgrade prompt. First run links the bundled copy at `~/.local/bin/reoclo` and adds one marked block to `~/.zshenv`, unless a working `reoclo` is already on your PATH. Connect your agents runs the bundled command's `reoclo mcp agents` and `reoclo mcp install`, registering the PATH link with each agent, or the bundled binary when another `reoclo` is in charge. The checks for an existing command wait at most five seconds for your login shell, then fall back to the usual install folders.
 
 A `reoclo://open` link opens a service on a server after you confirm it. The app signs in if needed, reuses or adds the matching tunnel, then opens the HTTPS address or copies the local endpoint.
 
@@ -158,10 +175,10 @@ cargo run --bin reoclo-desktop -- \
 ```
 
 Screens: `tunnels`, `logs`, `add`, `edit`, `hosts`, `certificates`, `settings`, `panel`.
-Data states: `loaded`, `loading`, `empty`, `terminal`, `offline`, `signed-out`, `device-code`, `error`. Update fixtures: `update-available`, `update-ready`, `update-error`, `update-disabled`.
+Data states: `loaded`, `loading`, `empty`, `terminal`, `offline`, `signed-out`, `device-code`, `error`. First-run states, with `--screen first-run`: `welcome`, `welcome-failed`, `link`, `installing`, `waiting`, `pairing`, `pairing-failed`, `pairing-helper`, `tools`, `tools-homebrew`, `tools-failed`, `ready`, `ready-agents`, `ready-connected` and `loading`. Update fixtures: `update-available`, `update-ready`, `update-error`, `update-disabled`.
 Tunnel-state fixtures accept the daemon's twelve state names, and `--reduced-motion` forces reduced motion.
 
-Review fixtures include `traffic-all`, `traffic-selected`, `traffic-terminal` and `retrying` on Tunnels. Use `long` on Logs to exercise virtualization; its `filtered` and `paused` fixtures exercise the controls. Certificates supports `domain-valid` and `domain-invalid`. The snapshot script captures both themes at 1100 × 760 and 760 × 620. A 390 × 844 capture checks narrow content behavior.
+Review fixtures include `traffic-all`, `traffic-selected`, `traffic-terminal` and `retrying` on Tunnels. `busy` adds ten saved tunnels and an approval to any screen, with one of those tunnels failed, while `quiet` and `failure` exercise the panel. Use `long` on Logs to exercise virtualization; its `filtered` and `paused` fixtures exercise the controls. Certificates supports `domain-valid` and `domain-invalid`. The snapshot script captures both themes at 1100 × 760 and 760 × 620. A 390 × 844 capture checks narrow content behavior.
 
 For an explicit fake socket, run `cargo run --bin fake-daemon -- /path/to/socket`. It prints `READY` once bound; send `quit` on stdin to stop it. Then pass `--socket /path/to/socket` to the app.
 

@@ -70,12 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.reduced_motion = reduced_motion;
         let mut spec = spec();
         if screen == "panel" {
-            spec.size = (340.0, 620.0);
-            spec.min_size = Some(spec.size);
+            spec.size = (theme::PANEL_WIDTH, theme::PANEL_HEIGHT);
+            spec.min_size = None;
         }
         let app = App::new(spec).init(move || state).args(args);
         if screen == "panel" {
-            app.run();
+            app.fit_content_height().run();
         } else {
             app.titlebar(TITLEBAR).run();
         }
@@ -124,24 +124,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let daemon_plist = home.join("Library/LaunchAgents/com.reoclo.tunneld.plist");
     let service_plist = (!demo).then(|| daemon_plist.clone());
     let service_installed = demo || service_plist.as_ref().is_some_and(|plist| plist.exists());
-    let onboarded = demo || preferences.onboarded;
+    let first_run = !preferences.onboarded;
     let automatic_updates = preferences.automatic_updates;
+    let in_bundle = executable
+        .to_string_lossy()
+        .contains(".app/Contents/MacOS/");
+    let command_paths = in_bundle.then(|| reoclo_desktop::system::command_path::CommandPaths {
+        home: home.clone(),
+        bundled: executable
+            .parent()
+            .and_then(std::path::Path::parent)
+            .map(|contents| contents.join("Resources/reoclo"))
+            .unwrap_or_default(),
+    });
     let mut app = App::new(spec())
         .titlebar(TITLEBAR)
-        .init(move || State {
-            start_at_login: login_enabled,
-            menu_bar: preferences.menu_bar,
-            relay_choice: preferences.relay,
-            preferences_path,
-            onboarded,
-            modal: (!onboarded).then(|| "get-started".to_owned()),
-            service_plist,
-            service_installed,
-            updates: reoclo_desktop::update::Status {
-                automatic: automatic_updates,
-                ..Default::default()
-            },
-            ..State::default()
+        .init({
+            let command_paths = command_paths.clone();
+            move || State {
+                start_at_login: login_enabled,
+                preferences_path,
+                service_plist,
+                service_installed,
+                command_paths,
+                ..State::launch(&preferences)
+            }
         })
         .args(args)
         .windowless()
@@ -170,18 +177,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     let main = app.handle();
     let mut panel_spec = spec();
-    panel_spec.size = (340.0, 620.0);
-    panel_spec.min_size = Some(panel_spec.size);
+    panel_spec.size = (theme::PANEL_WIDTH, theme::PANEL_HEIGHT);
+    panel_spec.min_size = None;
     let panel_app = App::new(panel_spec)
         .init(|| State {
             panel: true,
             ..State::default()
         })
-        .windowless();
+        .windowless()
+        .fit_content_height();
     let (panel, _) = app.window(
         WindowSpec::from_app("panel", panel_app).options(WindowOptions {
-            min_size: Some((340.0, 400.0)),
-            max_size: Some((340.0, 760.0)),
+            min_size: Some((theme::PANEL_WIDTH, 0.0)),
+            max_size: Some((theme::PANEL_WIDTH, theme::PANEL_HEIGHT)),
             borderless: true,
             always_on_top: true,
             resizable: false,
@@ -200,6 +208,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     };
     let system = reoclo_desktop::system::worker::start(runner, handles.clone());
+    let command = command_paths
+        .filter(|_| !demo)
+        .map(|paths| reoclo_desktop::system::worker::start_command(paths, handles.clone()));
     let updater = reoclo_desktop::update::worker::start(
         executable.clone(),
         handles.clone(),
@@ -221,6 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (index, handle) in handles.iter().enumerate() {
         let requests = requests.clone();
         let system = system.clone();
+        let command = command.clone();
         let main = main.clone();
         let socket = socket.clone();
         let updater = updater.clone();
@@ -231,6 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             s.updater = Some(updater);
             s.socket_path = socket;
             s.system_runner = Some(system);
+            s.command_worker = command;
             s.window_handle = Some(main);
             if demo {
                 s.cli = Some(Cli::Ready {
@@ -245,8 +258,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     tray::install(main.clone(), panel);
     main.wake();
-    if demo {
+    if demo || first_run {
         main.open();
+        main.set_dock_icon(true);
     }
     app.run();
     drop(fake);

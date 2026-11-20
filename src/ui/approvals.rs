@@ -1,14 +1,31 @@
 use super::{State, primitives::*};
-use crate::{control::segment, theme::*};
-use rune::{El, col, row, text};
-use rune_kit::{Button, Kit};
+use crate::{control::segment, model::Approval, theme::*};
+use rune::{El, Span, col, rich, row, text};
+use rune_kit::{Button, ButtonVariant, ControlSize, Kit};
+
+impl State {
+    /// Requests still waiting for an answer. The daemon drops a request when it expires and
+    /// refuses to decide it after that, so an expired request leaves the list here too.
+    pub fn pending_approvals(&self) -> impl Iterator<Item = &Approval> {
+        let now = self.approval_clock();
+        self.model
+            .approvals
+            .iter()
+            .filter(move |a| a.expires_at.is_none_or(|expiry| expiry > now))
+    }
+
+    fn approval_clock(&self) -> time::OffsetDateTime {
+        self.clock_epoch + time::Duration::seconds_f64(self.clock_seconds.unwrap_or(0.0))
+    }
+}
 
 /// Requests from agents, which stay blocked until someone answers.
 pub fn approvals(s: &State, k: &Kit) -> Option<El> {
-    let count = s.model.approvals.len();
-    if count == 0 {
+    let pending: Vec<_> = s.pending_approvals().collect();
+    if pending.is_empty() {
         return None;
     }
+    let count = pending.len();
     let heading = format!(
         "{count} pending approval{}",
         if count == 1 { "" } else { "s" }
@@ -19,7 +36,7 @@ pub fn approvals(s: &State, k: &Kit) -> Option<El> {
             .w_full()
             .gap(MD)
             .child(indicator(Tone::Warning, &heading, k));
-    for approval in &s.model.approvals {
+    for approval in pending {
         let approve = format!("/v1/approvals/{}/approve", segment(&approval.id));
         let deny = format!("/v1/approvals/{}/deny", segment(&approval.id));
         let words = approval
@@ -38,7 +55,7 @@ pub fn approvals(s: &State, k: &Kit) -> Option<El> {
         };
         let remote =
             words.contains("public") || words.contains("tailnet") || words.contains("reverse");
-        let mut metadata = row().gap(MD).center_y().child(indicator(
+        let action = indicator(
             if remote {
                 Tone::Warning
             } else {
@@ -46,45 +63,68 @@ pub fn approvals(s: &State, k: &Kit) -> Option<El> {
             },
             &label,
             k,
-        ));
-        if let Some(expiry) = approval.expires_at {
-            let now = s.clock_epoch + time::Duration::seconds_f64(s.clock_seconds.unwrap_or(0.0));
-            let seconds = (expiry - now).whole_seconds().max(0);
-            metadata = metadata.child(
-                text(if seconds == 0 {
-                    "Expired".into()
-                } else {
-                    format!("Expires in {} min", (seconds + 59) / 60)
-                })
+        );
+        let expiry = approval.expires_at.map(|expiry| {
+            let seconds = (expiry - s.approval_clock()).whole_seconds();
+            text(format!("Expires in {} min", (seconds + 59) / 60))
                 .font(HINT)
-                .color(k.c.text_muted),
-            );
-        }
-        let detail = col()
-            .gap(XS)
-            .min_w(0.0)
-            .child(text(&approval.agent).font(BODY).color(k.c.text_base).wrap())
-            .child(metadata)
-            .child(description(&approval.description, k));
+                .color(k.c.text_muted)
+        });
+        let deny = Button::new("Deny")
+            .disabled(s.approval_pending(&approval.id))
+            .on_press(move |s: &mut State| s.request("POST", &deny, None));
+        let approve = Button::new("Approve")
+            .disabled(s.approval_pending(&approval.id))
+            .on_press(move |s: &mut State| s.request("POST", &approve, None));
+        // The panel keeps each request to its action line, so its buttons take the small size.
+        let (deny, approve) = if s.panel {
+            (
+                deny.control_size(ControlSize::Small)
+                    .build(k)
+                    .border(RULE, k.c.border_strong),
+                approve
+                    .variant(ButtonVariant::Contrast)
+                    .control_size(ControlSize::Small)
+                    .build(k)
+                    .gradient(k.c.bg_contrast, k.c.bg_contrast),
+            )
+        } else {
+            (deny.secondary(k), approve.primary(k))
+        };
         let actions = row()
             .gap(SM)
-            .child(
-                Button::new("Deny")
-                    .disabled(s.approval_pending(&approval.id))
-                    .on_press(move |s: &mut State| s.request("POST", &deny, None))
-                    .secondary(k)
-                    .key(format!("deny-{}", approval.id)),
-            )
-            .child(
-                Button::new("Approve")
-                    .disabled(s.approval_pending(&approval.id))
-                    .on_press(move |s: &mut State| s.request("POST", &approve, None))
-                    .primary(k)
-                    .key(format!("approve-{}", approval.id)),
-            );
+            .child(deny.key(format!("deny-{}", approval.id)))
+            .child(approve.key(format!("approve-{}", approval.id)));
         list = list.child(if s.panel {
-            col().w_full().gap(SM).child(detail).child(actions)
+            let asked = row().w_full().gap(MD).pl(LG).child(
+                text(&approval.agent)
+                    .font(HINT)
+                    .color(k.c.text_muted)
+                    .truncate()
+                    .help_when_truncated(&approval.agent)
+                    .min_w(0.0)
+                    .shrink(),
+            );
+            col()
+                .w_full()
+                .gap(XS)
+                .child(
+                    row()
+                        .w_full()
+                        .gap(SM)
+                        .center_y()
+                        .child(action.grow(1.0))
+                        .child(actions),
+                )
+                .child(description(&approval.description, k).pl(LG))
+                .child(asked.children(expiry))
         } else {
+            let detail = col()
+                .gap(XS)
+                .min_w(0.0)
+                .child(text(&approval.agent).font(BODY).color(k.c.text_base).wrap())
+                .child(row().gap(MD).center_y().child(action).children(expiry))
+                .child(description(&approval.description, k));
             row()
                 .w_full()
                 .gap(LG)
@@ -96,16 +136,27 @@ pub fn approvals(s: &State, k: &Kit) -> Option<El> {
     Some(list)
 }
 
+/// The request as one sentence with its machine values in mono. A value stays on the line of
+/// the word before it, so "port 8080" never splits across lines.
 fn description(value: &str, k: &Kit) -> El {
-    let mut line = row().gap(XS).flex_wrap().w_full();
+    let mut content = String::new();
+    let mut spans = Vec::new();
     for word in value.split_whitespace() {
         let machine =
             word.contains('.') || word.contains(':') || word.chars().all(|c| c.is_ascii_digit());
-        line = line.child(
-            text(word)
-                .font(if machine { MONO } else { BODY })
-                .color(k.c.text_muted),
-        );
+        if !content.is_empty() {
+            content.push(if machine { '\u{a0}' } else { ' ' });
+        }
+        let start = content.len();
+        content.push_str(word);
+        if machine {
+            spans.push(Span::new(start, content.len()).mono().size(MONO.size));
+        }
     }
-    line
+    rich(content, spans)
+        .font(BODY)
+        .color(k.c.text_muted)
+        .wrap()
+        .w_full()
+        .min_w(0.0)
 }

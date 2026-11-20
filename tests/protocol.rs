@@ -52,7 +52,7 @@ fn future_events_and_states_do_not_break_the_stream() {
 }
 
 #[test]
-fn grouping_keeps_same_server_names_in_different_organizations_separate() {
+fn sorting_orders_tunnels_by_organization_then_name() {
     let mut model = Model::default();
     for (org, name) in [("zeta", "db"), ("alpha", "cache"), ("alpha", "api")] {
         model.tunnels.push(TunnelView {
@@ -63,10 +63,6 @@ fn grouping_keeps_same_server_names_in_different_organizations_separate() {
         });
     }
     model.sort();
-    assert_eq!(
-        model.groups().keys().copied().collect::<Vec<_>>(),
-        vec![("alpha", "prod"), ("zeta", "prod")]
-    );
     assert_eq!(
         model
             .tunnels

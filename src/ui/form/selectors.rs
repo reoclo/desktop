@@ -31,6 +31,7 @@ pub(super) fn directory(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El, E
             options: &options(orgs),
             current: Some(s.org.as_str()).filter(|v| !v.is_empty()),
             disabled: false,
+            width: FORM_COLUMN,
         },
         &s.org_picker,
         |s: &mut State| &mut s.org_picker,
@@ -39,6 +40,7 @@ pub(super) fn directory(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El, E
             s.server.clear();
             s.servers.clear();
             s.ports.clear();
+            s.ports_scan = PortsScan::Idle;
             s.selected_port = None;
             s.close_pickers();
             s.request("GET", &format!("/v1/orgs/{}/servers", segment(v)), None);
@@ -55,24 +57,15 @@ pub(super) fn directory(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El, E
             options: &options(servers),
             current: Some(selected_server).filter(|v| !v.is_empty()),
             disabled: s.org.is_empty(),
+            width: FORM_COLUMN,
         },
         &s.server_picker,
         |s: &mut State| &mut s.server_picker,
         |s: &mut State, v, _| {
             if let Some(server) = s.servers.iter().find(|o| o.slug == v) {
                 s.server = server.id.clone();
-                s.ports.clear();
-                s.selected_port = None;
                 s.close_pickers();
-                s.request(
-                    "GET",
-                    &format!(
-                        "/v1/orgs/{}/servers/{}/ports",
-                        segment(&s.org),
-                        segment(&s.server)
-                    ),
-                    None,
-                );
+                s.scan_ports();
             }
         },
         k,
@@ -112,7 +105,47 @@ pub(super) fn directory(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El, E
         }
     })
     .build(k, selects);
+    let port = match ports_status(s, k) {
+        Some(status) => col().w(FORM_COLUMN).gap(SM).child(port).child(status),
+        None => port,
+    };
     (org, server, port)
+}
+
+/// Why the port picker is empty, with a way to scan again. The Target field takes a port by hand.
+fn ports_status(s: &State, k: &Kit) -> Option<El> {
+    let (message, again) = match &s.ports_scan {
+        PortsScan::Idle if !s.server.is_empty() => (
+            "This server has not been scanned yet.".to_owned(),
+            Some("Scan ports"),
+        ),
+        PortsScan::Scanning => (
+            "Scanning the server for listening ports. This can take a few seconds.".to_owned(),
+            None,
+        ),
+        PortsScan::Loaded if s.ports.is_empty() => (
+            "No listening ports found. Enter the target by hand.".to_owned(),
+            None,
+        ),
+        PortsScan::Failed(reason) => (format!("Could not load ports: {reason}"), Some("Try again")),
+        PortsScan::Idle | PortsScan::Loaded => return None,
+    };
+    let note = text(message)
+        .font(BODY)
+        .color(k.c.text_muted)
+        .wrap()
+        .min_w(0.0)
+        .key("ports-status");
+    let mut status = col().w_full().gap(SM).child(note);
+    if let Some(label) = again {
+        status = status.child(
+            Button::new(label)
+                .on_press(|s: &mut State| s.scan_ports())
+                .secondary(k)
+                .key("ports-retry"),
+        );
+    }
+    Some(status)
 }
 
 pub(super) fn transport(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El) {
@@ -126,6 +159,7 @@ pub(super) fn transport(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El) {
             options: &options(["HTTPS", "TCP", "UDP", "REVERSE"].map(String::from)),
             current: Some(current_kind.as_str()),
             disabled: false,
+            width: FORM_COLUMN,
         },
         &s.kind_picker,
         |s: &mut State| &mut s.kind_picker,
@@ -145,6 +179,7 @@ pub(super) fn transport(s: &State, k: &Kit, selects: &mut Vec<El>) -> (El, El) {
             options: &options(["reoclo", "tailscale", "auto"].map(String::from)),
             current: Some(s.via.as_str()),
             disabled: false,
+            width: FORM_COLUMN,
         },
         &s.via_picker,
         |s: &mut State| &mut s.via_picker,

@@ -1,9 +1,11 @@
 mod approvals;
 mod certificates;
 mod compact_tunnels;
+mod connect_agents;
 mod data_state;
 mod dialogs;
 mod fault;
+mod first_run;
 mod fixtures;
 mod form;
 mod hosts;
@@ -15,11 +17,11 @@ mod panel;
 mod panel_tunnel;
 mod replies;
 mod settings;
+mod setup_flow;
 mod skeleton;
 mod state;
 pub use fault::Fault;
 mod primitives;
-mod terminal_tunnels;
 mod traffic_graph;
 mod tunnel_detail;
 mod tunnel_health;
@@ -27,11 +29,13 @@ mod tunnel_rows;
 mod tunnels;
 mod updates;
 use crate::theme::{self, *};
+pub use connect_agents::AgentsStep;
+pub use first_run::FirstRun;
 pub use links::{Effect, LinkStep, PendingLink};
-pub use onboarding::SetupStatus;
 use rune::{Cx, El, col, text};
 use rune_kit::shell::{Sidebar, SidebarRow, SplitView, Toolbar};
-pub use state::{Page, Request, State, ViewState, read_preferences};
+pub use setup_flow::{DAEMON_WAIT_SECONDS, LoginStep, SetupStep, StepState};
+pub use state::{Page, PortsScan, Request, State, ViewState, read_preferences};
 
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     cx.reduced_motion(s.reduced_motion || cx.system_reduced_motion());
@@ -50,8 +54,11 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         dialogs::confirmations(s, &k, &mut layer);
         return rune_kit::root(body, layer);
     }
+    if s.first_run {
+        return rune_kit::root(first_run::view(s, &k), layer);
+    }
     let content = match s.phase {
-        _ if s.page == Page::Logs && s.phase != ViewState::Loading => logs::view(s, &k),
+        _ if s.page == Page::Logs && s.phase != ViewState::Loading => logs::view(s, &k, &mut layer),
         ViewState::Offline | ViewState::SignedOut | ViewState::Error
             if s.page == Page::Settings =>
         {
@@ -67,7 +74,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
             Page::Certificates => certificates::view(s, &k),
             Page::Settings => settings::view(s, &k, &mut layer),
             Page::Tunnels => tunnels::view(s, &k),
-            Page::Logs => logs::view(s, &k),
+            Page::Logs => logs::view(s, &k, &mut layer),
         },
         _ => primitives::data_state(s, &k),
     };
@@ -114,10 +121,14 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
                 .truncate()
         })
     };
-    let toolbar = match status {
-        Some(status) => Toolbar::new().trailing(status),
-        None => Toolbar::new(),
-    };
+    let mut toolbar = Toolbar::new();
+    // The sidebar carries the only wordmark; while it is collapsed, the top bar does.
+    if !s.sidebar.is_open() {
+        toolbar = toolbar.leading(primitives::wordmark(&k).key("toolbar-wordmark"));
+    }
+    if let Some(status) = status {
+        toolbar = toolbar.trailing(status);
+    }
     let body = SplitView::new(content)
         .sidebar(&s.sidebar, |s: &mut State| &mut s.sidebar, sidebar)
         .toolbar(toolbar)
@@ -149,7 +160,6 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         );
     }
     form::sheet(s, &k, &mut layer);
-    onboarding::sheet(s, &k, &mut layer);
     dialogs::confirmations(s, &k, &mut layer);
     rune_kit::root(body, std::mem::take(&mut layer))
 }

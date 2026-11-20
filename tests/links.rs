@@ -2,8 +2,8 @@ use reoclo_desktop::{
     control::{self, Client},
     fake::FakeDaemon,
     model::TunnelState,
-    system::{FakeRunner, SystemAction, SystemRunner},
-    ui::{Effect, Fault, LinkStep, Request, SetupStatus, State, ViewState, read_preferences, view},
+    system::SystemAction,
+    ui::{Effect, Fault, LinkStep, Request, State, view},
 };
 use rune::{Env, Runtime};
 use serde_json::json;
@@ -157,13 +157,13 @@ fn a_failed_sign_in_drops_the_link() {
 }
 
 #[test]
-fn confirming_with_the_service_not_running_opens_get_started() {
+fn confirming_with_the_service_not_running_keeps_the_link_for_first_run() {
     let mut state = State::fixture("tunnels", "offline").unwrap();
     state.open_link(HTTPS_GRAFANA);
     state.confirm_link();
-    assert!(state.link.is_none());
-    assert_eq!(state.modal.as_deref(), Some("get-started"));
-    assert!(state.error.as_deref().unwrap().contains("not running"));
+    assert!(state.first_run);
+    assert_eq!(state.modal, None);
+    assert_eq!(state.link_step(), Some(LinkStep::Confirm));
 }
 
 #[test]
@@ -524,58 +524,6 @@ fn a_helper_install_that_is_refused_drops_the_link() {
 }
 
 #[test]
-fn get_started_reports_where_each_step_stands() {
-    let status = |page: &str| State::fixture(page, "loaded").unwrap().setup_status();
-    assert_eq!(
-        status("get-started"),
-        [
-            SetupStatus::Needed,
-            SetupStatus::Waiting,
-            SetupStatus::Waiting
-        ]
-    );
-    assert_eq!(
-        status("get-started-progress"),
-        [
-            SetupStatus::Done,
-            SetupStatus::Needed,
-            SetupStatus::Optional
-        ]
-    );
-    assert_eq!(
-        status("get-started-done"),
-        [SetupStatus::Done, SetupStatus::Done, SetupStatus::Done]
-    );
-    let mut state = State::fixture("get-started-done", "loaded").unwrap();
-    state.service_installed = false;
-    assert_eq!(state.setup_status()[0], SetupStatus::Needed);
-    let mut loading = State::fixture("get-started-done", "loaded").unwrap();
-    loading.phase = ViewState::Loading;
-    assert_eq!(loading.setup_status(), [SetupStatus::Checking; 3]);
-}
-
-#[test]
-fn the_service_step_runs_the_install_and_the_fake_runner_makes_no_changes() {
-    let mut state = State::fixture("get-started", "loaded").unwrap();
-    let (runner, actions) = mpsc::channel();
-    state.system_runner = Some(runner);
-    let mut rt = runtime(state);
-    click(&mut rt, "setup-install-service");
-    let (action, cli) = actions.try_recv().unwrap();
-    assert_eq!(action, SystemAction::InstallDaemon);
-    assert_eq!(
-        cli.as_deref(),
-        Some(std::path::Path::new("/opt/homebrew/bin/reoclo"))
-    );
-    assert!(
-        FakeRunner
-            .run(&action, cli.as_deref())
-            .unwrap()
-            .contains("no system changes")
-    );
-}
-
-#[test]
 fn the_offline_start_button_installs_the_service() {
     let mut state = State::fixture("tunnels", "offline").unwrap();
     let (runner, actions) = mpsc::channel();
@@ -590,58 +538,25 @@ fn the_offline_start_button_installs_the_service() {
 }
 
 #[test]
-fn the_sign_in_step_asks_for_a_device_code_and_shows_it() {
-    let rt = runtime(State::fixture("get-started-progress", "loaded").unwrap());
-    assert!(rt.find("setup-open-sign-in").is_some());
-    assert!(rt.find("setup-sign-in").is_none());
-
-    let mut state = State::fixture("get-started-progress", "loaded").unwrap();
-    state.model.auth = Default::default();
-    let mut rt = runtime(state);
-    click(&mut rt, "setup-sign-in");
-    let request = rt.state.outbox.pop().unwrap();
-    assert_eq!(
-        (request.method.as_str(), request.path.as_str()),
-        ("POST", "/v1/auth/login")
-    );
-}
-
-#[test]
 fn the_secure_step_trusts_the_certificate_then_finishes() {
-    let mut state = State::fixture("get-started-progress", "loaded").unwrap();
-    state.model.auth = Default::default();
-    let mut rt = runtime(state);
-    click(&mut rt, "setup-secure");
-    let request = rt.state.outbox.pop().unwrap();
+    let mut state = State::fixture("first-run", "pairing").unwrap();
+    state.secure_next();
+    let request = state.outbox.pop().unwrap();
     assert_eq!(request.path, "/v1/ca/trust");
-    rt.state.receive(&request, Ok(json!({"ok": true})));
-    assert!(rt.state.secure_ready());
+    state.receive(&request, Ok(json!({"ok": true})));
+    assert!(state.ca_ready());
+    assert!(state.securing);
     assert_eq!(
-        rt.state.notice.as_deref(),
-        Some("Secure web addresses are ready.")
+        state.notice.as_deref(),
+        Some("Fixture preview. No system changes were made.")
     );
-    assert!(!rt.state.securing);
-}
-
-#[test]
-fn done_closes_get_started_and_remembers_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("preferences.json");
-    let mut state = State::fixture("get-started-done", "loaded").unwrap();
-    state.preferences_path = Some(path.clone());
-    assert!(!read_preferences(&path).onboarded);
-    let mut rt = runtime(state);
-    click(&mut rt, "setup-done");
-    assert_eq!(rt.state.modal, None);
-    assert!(rt.state.onboarded);
-    assert!(read_preferences(&path).onboarded);
 }
 
 #[test]
 fn settings_can_run_setup_again() {
     let mut rt = runtime(State::fixture("settings", "loaded").unwrap());
     click(&mut rt, "run-setup");
-    assert_eq!(rt.state.modal.as_deref(), Some("get-started"));
+    assert!(rt.state.first_run);
     let request = rt.state.outbox.pop().unwrap();
     assert_eq!(request.path, "/v1/status");
 }

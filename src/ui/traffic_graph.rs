@@ -5,8 +5,7 @@ use rune_kit::{Button, Kit};
 
 /// The chart uses fixed one-second buckets, with no interpolation or looping animation.
 pub fn view(s: &State, k: &Kit) -> El {
-    let now = (s.clock_epoch + time::Duration::seconds_f64(s.clock_seconds.unwrap_or(0.0)))
-        .unix_timestamp();
+    let now = now(s);
     let selected = s.model.selected.as_deref().map(|name| {
         if name.starts_with("terminal:") {
             name.rsplit_once(':').map_or(name, |(session, _)| session)
@@ -66,12 +65,12 @@ pub fn view(s: &State, k: &Kit) -> El {
     if peak > 0 {
         shape = shape
             .stroke(
-                points(&series, peak, width, false),
+                points(&series, peak, [width, height], false),
                 GRAPH_STROKE,
                 k.c.info.fg,
             )
             .stroke(
-                points(&series, peak, width, true),
+                points(&series, peak, [width, height], true),
                 GRAPH_STROKE,
                 k.c.success.fg,
             );
@@ -98,7 +97,18 @@ pub fn view(s: &State, k: &Kit) -> El {
             .child(spacer()).child(text("Now").font(MONO).color(k.c.text_muted)))
 }
 
-fn points(series: &[Point], peak: u64, width: f32, outgoing: bool) -> Vec<[f32; 2]> {
+/// The second the graphs end at, on the app's clock.
+pub(super) fn now(s: &State) -> i64 {
+    (s.clock_epoch + time::Duration::seconds_f64(s.clock_seconds.unwrap_or(0.0))).unix_timestamp()
+}
+
+/// The plotted line for `[width, height]` points, scaled so `peak` touches the top.
+pub(super) fn points(
+    series: &[Point],
+    peak: u64,
+    [width, height]: [f32; 2],
+    outgoing: bool,
+) -> Vec<[f32; 2]> {
     // Five-second maxima keep short bursts visible without drawing more vertices than pixels.
     let buckets: Vec<_> = series
         .chunks(5)
@@ -120,12 +130,12 @@ fn points(series: &[Point], peak: u64, width: f32, outgoing: bool) -> Vec<[f32; 
             let x = f32::from(u16::try_from(i).unwrap_or(last)) / f32::from(last) * width;
             let scaled = value.saturating_mul(10_000).checked_div(peak).unwrap_or(0);
             let ratio = f32::from(u16::try_from(scaled).unwrap_or(10_000)) / 10_000.0;
-            [x, GRAPH_HEIGHT * (1.0 - ratio)]
+            [x, height * (1.0 - ratio)]
         })
         .collect()
 }
 
-fn bytes(value: u64) -> String {
+pub(super) fn bytes(value: u64) -> String {
     if value >= 1024 * 1024 {
         format!("{} MiB", value / (1024 * 1024))
     } else if value >= 1024 {

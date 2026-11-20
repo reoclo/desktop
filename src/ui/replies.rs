@@ -1,5 +1,5 @@
 mod events;
-use super::{Fault, Request, State, ViewState};
+use super::{Fault, PortsScan, Request, State, ViewState};
 use crate::model::*;
 use serde_json::Value;
 
@@ -16,12 +16,26 @@ impl State {
                 if let Err(error) = self.accept(request, value) {
                     self.error = Some(format!("The daemon returned an invalid response: {error}"));
                     self.phase = ViewState::Error;
+                    self.finish_trust_check(request, false);
                 } else {
                     self.link_reply(request);
+                    self.finish_trust_check(request, true);
                 }
+            }
+            // Daemons from before the idle-timeout fix trust the CA, then drop the connection
+            // without a reply, so ask the daemon what it did before reporting a failure.
+            Err(Fault::Lost(message)) if request.path == "/v1/ca/trust" => {
+                self.trust_check = Some((request.clone(), message));
+                self.request("GET", "/v1/status", None);
             }
             // A daemon older than this feature has no such route, and nothing to report.
             Err(Fault::Error(_)) if request.path == "/v1/foreground" => {}
+            // A scan that fails is reported beside the port picker, and the form stays usable.
+            Err(Fault::Error(message) | Fault::Lost(message))
+                if request.method == "GET" && request.path.ends_with("/ports") =>
+            {
+                self.ports_scan = PortsScan::Failed(message);
+            }
             Err(fault) => {
                 self.secure_failed(request);
                 self.link_failed(request);
@@ -34,7 +48,7 @@ impl State {
                         self.phase = ViewState::SignedOut;
                         message
                     }
-                    Fault::Error(message) => {
+                    Fault::Error(message) | Fault::Lost(message) => {
                         if request.path == "/v1/status"
                             || request.path == "/v1/tunnels" && request.method == "GET"
                         {
@@ -43,8 +57,27 @@ impl State {
                         message
                     }
                 });
+                self.flow_failed(request);
+                self.finish_trust_check(request, false);
             }
         }
+    }
+
+    /// A status answer settles a trust request whose reply was lost: done if the CA is now
+    /// trusted, otherwise the original error. A status that failed leaves only the error.
+    fn finish_trust_check(&mut self, request: &Request, status_ok: bool) {
+        if request.path != "/v1/status" {
+            return;
+        }
+        let Some((trust, message)) = self.trust_check.take() else {
+            return;
+        };
+        let settled = if status_ok && self.ca_ready() {
+            Ok(serde_json::json!({"ok": true}))
+        } else {
+            Err(Fault::Error(message))
+        };
+        self.apply_response(&trust, settled);
     }
 
     fn accept(&mut self, request: &Request, value: Value) -> Result<(), serde_json::Error> {
@@ -54,6 +87,7 @@ impl State {
                 self.refresh_service();
                 self.remember_relay();
                 self.find_cli(false);
+                self.daemon_answered();
             }
             ("GET", "/v1/foreground") => {
                 self.model.foreground = serde_json::from_value::<ForegroundList>(value)?.tunnels;
@@ -83,6 +117,7 @@ impl State {
                 self.remember_relay();
                 if after_install {
                     self.secure_after_helper();
+                    self.helper_answered();
                 }
             }
             ("GET", "/v1/tunnels") => {
@@ -171,7 +206,17 @@ impl State {
                 }
             }
             ("GET", path) if path.ends_with("/ports") => {
-                self.ports = serde_json::from_value::<PortList>(value)?.ports
+                match serde_json::from_value::<PortList>(value) {
+                    Ok(list) => {
+                        self.ports = list.ports;
+                        self.ports_scan = PortsScan::Loaded;
+                    }
+                    Err(error) => {
+                        self.ports_scan = PortsScan::Failed(format!(
+                            "The daemon sent a port list the app cannot read: {error}"
+                        ));
+                    }
+                }
             }
             ("POST", path) if path.starts_with("/v1/approvals/") => {
                 let approval: Approval = serde_json::from_value(value)?;
@@ -223,6 +268,8 @@ impl State {
                 }
                 if self.securing && !domain {
                     self.secure_after_trust();
+                } else if !domain {
+                    self.certificate_trusted();
                 }
             }
             _ => {

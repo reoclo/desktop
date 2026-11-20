@@ -29,6 +29,7 @@ impl State {
             orgs: f.orgs,
             servers: f.servers,
             ports: f.ports,
+            ports_scan: super::PortsScan::Loaded,
             org: "demo".into(),
             server: "server-1".into(),
             phase: ViewState::Loaded,
@@ -47,10 +48,10 @@ impl State {
             last_checked: Some("2026-11-20 04:00 UTC".into()),
             phase: match case {
                 "update-available" => crate::update::Phase::Available {
-                    version: "0.7.0".into(),
+                    version: "0.9.0".into(),
                 },
                 "update-ready" => crate::update::Phase::Ready {
-                    version: "0.7.0".into(),
+                    version: "0.9.0".into(),
                     notes: "More reliable tunnel recovery. Improved keyboard navigation.".into(),
                 },
                 "update-error" => crate::update::Phase::Failed(
@@ -187,30 +188,6 @@ impl State {
                 ..Default::default()
             };
         }
-        if page.starts_with("get-started") {
-            s.modal = Some("get-started".into());
-            match page {
-                "get-started" => {
-                    s.phase = ViewState::Offline;
-                    s.model.status = Status::default();
-                }
-                "get-started-progress" => {
-                    s.service_installed = true;
-                    s.phase = ViewState::SignedOut;
-                    s.model.status.signed_in = Some(false);
-                    s.model.auth = AuthEvent {
-                        user_code: Some("DEMO-7294".into()),
-                        verification_uri: Some("https://auth.reoclo.com/device".into()),
-                        status: "pending".into(),
-                        ..Default::default()
-                    };
-                    if let Some(ca) = &mut s.model.status.ca {
-                        ca.trusted = false;
-                    }
-                }
-                _ => s.service_installed = true,
-            }
-        }
         if page == "open-link" {
             s.link = link::parse(
                 "reoclo://open?v=1&org=demo&server=prod-1&port=3000&kind=https&name=grafana-web",
@@ -218,6 +195,9 @@ impl State {
             .ok()
             .map(PendingLink::new);
             s.modal = Some("open-link".into());
+        }
+        if page == "first-run" {
+            s.first_run_fixture(case);
         }
         if let Some(name) = &s.model.selected {
             s.table.select(name);

@@ -22,6 +22,17 @@ pub const ENDPOINT_MIN: f32 = 160.0;
 pub const COLUMN_MIN: f32 = 96.0;
 pub const COLUMN_MAX: f32 = 220.0;
 pub const MONO_ADVANCE: f32 = 7.2;
+/// The widest a dropdown's list opens, Rune's popover limit; a dropdown's field matches it.
+pub const MENU_WIDTH: f32 = 320.0;
+/// The menu-bar panel's width, and the most height it grows to before its list scrolls.
+pub const PANEL_WIDTH: f32 = 340.0;
+pub const PANEL_HEIGHT: f32 = 620.0;
+/// One menu-bar panel row: mark, name, endpoint and the switch or Stop on one line.
+pub const PANEL_ROW: f32 = XL + XS;
+/// The panel's name column, a server and its Terminal tag included, so endpoints line up down the list.
+pub const PANEL_NAME: f32 = COLUMN_MIN + LG;
+/// The panel's trailing slot, wide enough for a switch or a small Stop button.
+pub const PANEL_ACTION: f32 = XXL + LG;
 pub const TITLE: TextStyle = TextStyle::new(28.0, 800.0).family(Family::Named("Mona Sans"));
 pub const HEADING: TextStyle = TextStyle::new(18.0, 600.0);
 pub const BODY: TextStyle = TextStyle::new(14.0, 400.0);
@@ -30,6 +41,10 @@ pub const MONO: TextStyle = TextStyle::new(12.0, 400.0).mono();
 pub const HINT: TextStyle = TextStyle::new(12.0, 400.0);
 pub const WORDMARK: TextStyle = TextStyle::new(18.0, 800.0).family(Family::Named("Mona Sans"));
 pub const CODE: TextStyle = TextStyle::new(18.0, 500.0).mono();
+/// The first-run flow's step list, beside its page.
+pub const FIRST_RUN_RAIL: f32 = 240.0;
+/// The widest a first-run page's text runs, so sentences keep a readable measure.
+pub const FIRST_RUN_MEASURE: f32 = 600.0;
 /// One column of the two-column Add tunnel form.
 pub const FORM_COLUMN: f32 = 256.0;
 /// The height of a text input, which selects match so rows line up.
@@ -40,8 +55,13 @@ pub const FONTS: &[&[u8]] = &[
     include_bytes!("../assets/fonts/MonaSans.ttf"),
 ];
 
+/// The Survey Sheet tokens for one appearance, from `assets/theme.json`.
+pub fn tokens(dark: bool) -> Result<Theme, String> {
+    Theme::from_json(include_str!("../assets/theme.json"), dark)
+}
+
 pub fn kit(dark: bool) -> Result<Kit, String> {
-    let t = Theme::from_json(include_str!("../assets/theme.json"), dark)?;
+    let t = tokens(dark)?;
     let mut k = Kit::from_palette(PaletteSeed {
         bg: t.color("bg"),
         fg: t.color("fg"),

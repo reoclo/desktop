@@ -4,6 +4,8 @@ use crate::control::Error;
 pub enum Fault {
     Offline(String),
     SignedOut(String),
+    /// The daemon may have acted, but no reply came back.
+    Lost(String),
     Error(String),
 }
 
@@ -19,6 +21,7 @@ impl From<Error> for Fault {
             {
                 Self::Offline(message)
             }
+            Error::Io(_) | Error::Protocol(_) => Self::Lost(message),
             Error::Api { status: 401, .. } => Self::SignedOut(message),
             Error::Api {
                 state: Some(state), ..

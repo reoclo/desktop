@@ -51,8 +51,14 @@ impl FakeDaemon {
     pub fn start(path: PathBuf) -> Result<Self, Error> {
         let listener = UnixListener::bind(&path)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        let mut fixture = Fixture::load()?;
+        // The daemon gives a request ten minutes from when an agent asks, so a demo starts fresh.
+        let expires = time::OffsetDateTime::now_utc() + time::Duration::minutes(10);
+        for approval in &mut fixture.approvals {
+            approval.expires_at = Some(expires);
+        }
         let shared = Arc::new(Mutex::new(Shared {
-            fixture: Fixture::load()?,
+            fixture,
             subscribers: Vec::new(),
             stopped: false,
         }));

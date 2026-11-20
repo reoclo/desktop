@@ -226,3 +226,15 @@ fn approval_expiry_advances_on_the_virtual_clock() {
             .any(|e| e.text.as_deref() == Some("Expires in 3 min"))
     );
 }
+
+#[test]
+fn an_expired_approval_leaves_the_list_and_the_count() {
+    let mut state = State::fixture("tunnels", "loaded").unwrap();
+    let mut tx = rune::Tx::default();
+    state.poll(0.0, &mut tx);
+    state.poll(241.0, &mut tx);
+    assert_eq!(state.pending_approvals().count(), 0);
+    let rt = runtime(state);
+    assert!(rt.find("approve-approval-1").is_none());
+    assert!(rt.find("deny-approval-1").is_none());
+}

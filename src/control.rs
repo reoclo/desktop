@@ -49,8 +49,15 @@ impl Client {
             return Err(Error::Protocol("Invalid request path or method".into()));
         }
         let mut stream = UnixStream::connect(&self.path)?;
-        // Trusting the CA waits on the person at the macOS password prompt.
-        let wait = if path.starts_with("/v1/ca/") { 300 } else { 15 };
+        // Trusting the CA waits on the person at the macOS password prompt, and a port scan
+        // runs on the server for up to 45 seconds.
+        let wait = if path.starts_with("/v1/ca/") {
+            300
+        } else if path.ends_with("/ports") {
+            60
+        } else {
+            15
+        };
         stream.set_read_timeout(Some(Duration::from_secs(wait)))?;
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
         let payload = body

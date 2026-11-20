@@ -136,8 +136,8 @@ pub fn panel(s: &State, k: &Kit) -> Option<El> {
     match &s.updates.phase {
         Phase::Ready { version, .. } => Some(
             row()
+                .key("panel-update")
                 .w_full()
-                .padding(LG)
                 .gap(SM)
                 .center_y()
                 .child(indicator(Tone::Success, &format!("{version} ready"), k).grow(1.0))

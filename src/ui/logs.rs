@@ -1,12 +1,18 @@
-use super::{Page, State, primitives::*};
+use super::{
+    Page, State,
+    form::controls::{Picker, picker},
+    primitives::*,
+};
 use crate::{logs::LogEntry, theme::*};
 use rune::{El, GrowthSpec, ScrollSpec, TextEdit, col, row, text};
-use rune_kit::{Button, Kit, TextInput};
+use rune_kit::{Button, ComboboxOption, ComboboxState, Kit, TextInput};
 use std::{borrow::Cow, rc::Rc};
 
 pub struct LogView {
     pub query: TextEdit,
-    pub tunnel: TextEdit,
+    /// The tunnel name the lines must contain as a whole word. Empty means every tunnel.
+    pub tunnel: String,
+    pub tunnel_picker: ComboboxState,
     pub paused: Option<Vec<LogEntry>>,
     pub follow: bool,
 }
@@ -15,7 +21,8 @@ impl Default for LogView {
     fn default() -> Self {
         Self {
             query: TextEdit::new(""),
-            tunnel: TextEdit::new(""),
+            tunnel: String::new(),
+            tunnel_picker: ComboboxState::default(),
             paused: None,
             follow: true,
         }
@@ -25,7 +32,7 @@ impl Default for LogView {
 impl State {
     pub fn show_logs(&mut self, tunnel: &str) {
         self.show_page(Page::Logs);
-        self.logs.tunnel = TextEdit::new(tunnel);
+        self.logs.tunnel = tunnel.to_owned();
         self.logs.query = TextEdit::new("");
         self.logs.paused = None;
         self.logs.follow = true;
@@ -37,15 +44,30 @@ impl State {
             None => Box::new(self.model.recent_logs.iter()),
         };
         source
-            .filter(|entry| {
-                entry.matches(self.logs.tunnel.text.trim(), self.logs.query.text.trim())
-            })
+            .filter(|entry| entry.matches(&self.logs.tunnel, self.logs.query.text.trim()))
             .cloned()
             .collect()
     }
+
+    /// The Logs filter's choices: every tunnel, then each saved tunnel and terminal session.
+    /// A terminal session has no name of its own, so its server names it in the log.
+    pub fn log_filters(&self) -> Vec<ComboboxOption> {
+        let mut options = vec![ComboboxOption::new("", "All tunnels")];
+        for tunnel in &self.model.tunnels {
+            options.push(ComboboxOption::new(&tunnel.name, &tunnel.name));
+        }
+        for session in &self.model.foreground {
+            if options.iter().all(|option| option.id != session.server) {
+                let mut option = ComboboxOption::new(&session.server, &session.server);
+                option.detail = "Terminal".into();
+                options.push(option);
+            }
+        }
+        options
+    }
 }
 
-pub fn view(s: &State, k: &Kit) -> El {
+pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
     let entries = Rc::new(s.filtered_logs());
     let count = entries.len();
     let keys = Rc::clone(&entries);
@@ -56,26 +78,37 @@ pub fn view(s: &State, k: &Kit) -> El {
         .map(LogEntry::display)
         .collect::<Vec<_>>()
         .join("\n");
-    let filters = col()
-        .equal_columns(if s.compact { 1 } else { 2 })
+    let narrow = s.viewport_width < NARROW_WIDTH;
+    let filters = (if narrow { col() } else { row() })
         .w_full()
         .gap(SM)
-        .child(
-            TextInput::new(&s.logs.tunnel)
-                .label("Filter by tunnel")
-                .placeholder("All tunnels")
-                .on_edit(|s: &mut State| &mut s.logs.tunnel)
-                .build(k)
-                .w_full()
-                .border(RULE, k.c.border_strong)
-                .key("log-tunnel-filter"),
-        )
+        .child(picker(
+            Picker {
+                key: "log-tunnel-filter",
+                label: "Filter by tunnel",
+                placeholder: "All tunnels",
+                search: "Search tunnels",
+                options: &s.log_filters(),
+                current: Some(s.logs.tunnel.as_str()),
+                disabled: false,
+                width: filter_width(s),
+            },
+            &s.logs.tunnel_picker,
+            |s: &mut State| &mut s.logs.tunnel_picker,
+            |s: &mut State, tunnel, _| {
+                s.logs.tunnel = tunnel.into();
+                s.logs.tunnel_picker.close();
+            },
+            k,
+            layer,
+        ))
         .child(
             TextInput::new(&s.logs.query)
                 .label("Filter log text")
                 .placeholder("Search log text")
                 .on_edit(|s: &mut State| &mut s.logs.query)
                 .build(k)
+                .grow(1.0)
                 .w_full()
                 .border(RULE, k.c.border_strong)
                 .key("log-text-filter"),
@@ -207,4 +240,11 @@ pub fn view(s: &State, k: &Kit) -> El {
                 }),
         ),
     )
+}
+
+/// The tunnel dropdown is as wide as its list opens, or the page when that is narrower.
+fn filter_width(s: &State) -> f32 {
+    let padding = if s.compact { LG } else { XL };
+    let content = (s.viewport_width - s.sidebar.shown_width()).min(CONTENT_MAX) - padding * 2.0;
+    content.min(MENU_WIDTH)
 }
