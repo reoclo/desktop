@@ -9,7 +9,8 @@ pub fn view(s: &State, k: &Kit) -> El {
     let exists = ca.is_some_and(|ca| ca.exists);
     let mut body = col()
         .w_full()
-        .padding(XL)
+        .max_w(CONTENT_MAX)
+        .padding(if s.compact { LG } else { XL })
         .gap(XL)
         .child(title("Certificates", None, k));
     if let Some(error) = s.error.as_ref().filter(|_| s.modal.is_none()) {
@@ -25,7 +26,7 @@ pub fn view(s: &State, k: &Kit) -> El {
                 .center_y()
                 .child(
                     text("Local certificate authority")
-                        .font(HEADING)
+                        .role("heading").font(HEADING)
                         .color(k.c.text_base)
                         .grow(1.0),
                 )
@@ -90,24 +91,43 @@ pub fn view(s: &State, k: &Kit) -> El {
             .primary(k)
             .key("trust-ca")
     };
-    body = body.child(authority).child(row().child(action)).child(
-        text(if trusted {
-            "Command-line tools may also need NODE_EXTRA_CA_CERTS; get the file path with reoclo tunnel ca-path."
-        } else {
-            "Trust opens the system authentication prompt. Command-line tools may also need NODE_EXTRA_CA_CERTS; get the file path with reoclo tunnel ca-path."
-        })
+    body = body.child(authority).child(row().child(action));
+    if let Some(path) = &s.ca_path {
+        let path = path.display().to_string();
+        let export = format!(
+            "export NODE_EXTRA_CA_CERTS='{}'",
+            path.replace('\'', "'\\''")
+        );
+        body = body.child(field("CA file", &path, k)).child(
+            row().child(
+                Button::new("Copy export line")
+                    .on_press_tx(move |s: &mut State, tx| {
+                        tx.copy(&export);
+                        s.notice = Some("CA export line copied.".into());
+                    })
+                    .secondary(k)
+                    .key("copy-ca-export"),
+            ),
+        );
+    } else {
+        body = body.child(
+            text(
+                s.ca_path_error
+                    .as_deref()
+                    .unwrap_or("Reading the CA file path from the CLI."),
+            )
             .font(HINT)
             .color(k.c.text_muted)
-            .wrap()
-            .max_w(640.0),
-    );
+            .wrap(),
+        );
+    }
     if ca.is_some() {
         let ready = !s.busy && !s.trust_domain.text.trim().is_empty();
         body = body.child(
             col()
                 .w_full()
                 .gap(MD)
-                .child(text("Trust another domain").font(HEADING).color(k.c.text_base))
+                .child(text("Trust another domain").role("heading").font(HEADING).color(k.c.text_base))
                 .child(
                     text("Let the CA sign for names under a domain you choose, such as internal or agents.localhost. macOS asks for your password.")
                         .font(BODY)

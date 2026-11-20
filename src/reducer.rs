@@ -14,7 +14,13 @@ pub struct Model {
     pub host_entries: Vec<HostEntry>,
     pub auth: AuthEvent,
     pub selected: Option<String>,
-    pub recent_logs: Vec<String>,
+    pub recent_logs: Vec<LogEntry>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LogEntry {
+    pub received: time::OffsetDateTime,
+    pub line: String,
 }
 
 impl Model {
@@ -29,15 +35,14 @@ impl Model {
                     tunnel: Option<TunnelView>,
                 }
                 let change: Change = serde_json::from_str(data)?;
-                self.tunnels.retain(|t| t.name != change.name);
                 if change.removed {
+                    self.tunnels.retain(|t| t.name != change.name);
                     if self.selected.as_deref() == Some(&change.name) {
                         self.selected = None;
                     }
                 } else if let Some(tunnel) = change.tunnel {
-                    self.tunnels.push(tunnel);
+                    self.update_tunnel(tunnel);
                 }
-                self.sort();
             }
             "traffic" => {
                 #[derive(Deserialize)]
@@ -69,8 +74,10 @@ impl Model {
                 struct Log {
                     line: String,
                 }
-                self.recent_logs
-                    .push(serde_json::from_str::<Log>(data)?.line);
+                self.recent_logs.push(LogEntry {
+                    received: time::OffsetDateTime::now_utc(),
+                    line: serde_json::from_str::<Log>(data)?.line,
+                });
                 if self.recent_logs.len() > 50 {
                     self.recent_logs.remove(0);
                 }
@@ -83,6 +90,26 @@ impl Model {
     pub fn sort(&mut self) {
         self.tunnels
             .sort_by(|a, b| (&a.org, &a.server, &a.name).cmp(&(&b.org, &b.server, &b.name)));
+    }
+
+    /// State changes preserve the user's row order.
+    pub fn update_tunnel(&mut self, tunnel: TunnelView) {
+        if let Some(current) = self.tunnels.iter_mut().find(|t| t.name == tunnel.name) {
+            *current = tunnel;
+        } else {
+            self.tunnels.push(tunnel);
+        }
+    }
+
+    pub fn replace_tunnels(&mut self, mut tunnels: Vec<TunnelView>) {
+        let mut ordered = Vec::with_capacity(tunnels.len());
+        for old in &self.tunnels {
+            if let Some(index) = tunnels.iter().position(|t| t.name == old.name) {
+                ordered.push(tunnels.remove(index));
+            }
+        }
+        ordered.extend(tunnels);
+        self.tunnels = ordered;
     }
 
     pub fn groups(&self) -> BTreeMap<(&str, &str), Vec<&TunnelView>> {

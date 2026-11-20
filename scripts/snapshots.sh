@@ -12,13 +12,43 @@ for screen in tunnels add hosts certificates settings panel; do
   for state in loaded loading empty terminal offline signed-out device-code error; do
     for theme in light dark; do
       name="$screen-$state-$theme"
-      "$app" --fixture --screen "$screen" --state "$state" --theme "$theme" \
+      "$app" --fixture --at 1 --screen "$screen" --state "$state" --theme "$theme" \
         --snap "snapshots/$name.png" --tree "snapshots/$name.json"
       printf 'CAPTURE %s\n' "$name"
     done
   done
 done
 for theme in light dark; do
+  for screen in settings panel; do
+    for state in update-available update-ready update-error update-disabled; do
+      "$app" --fixture --at 1 --screen "$screen" --state "$state" --theme "$theme" \
+        --snap "snapshots/$screen-$state-$theme.png" --tree "snapshots/$screen-$state-$theme.json"
+      for size in 760x620 390x844; do
+        "$app" --fixture --at 1 --screen "$screen" --state "$state" --theme "$theme" --size "$size" \
+          --snap "snapshots/$screen-$state-$size-$theme.png" --tree "snapshots/$screen-$state-$size-$theme.json"
+      done
+    done
+  done
+  for screen in tunnels panel; do
+    for state in shared-failure long-names events; do
+      "$app" --fixture --at 1 --screen "$screen" --state "$state" --theme "$theme" \
+        --snap "snapshots/$screen-$state-$theme.png" --tree "snapshots/$screen-$state-$theme.json"
+    done
+  done
+  "$app" --fixture --screen panel --theme "$theme" --size 390x844 --at 1 \
+    --snap "snapshots/panel-390x844-$theme.png" --tree "snapshots/panel-390x844-$theme.json"
+  "$app" --fixture --state events --theme "$theme" --script scripts/window-end.json --at 1 \
+    --snap "snapshots/tunnels-events-end-$theme.png" --tree "snapshots/tunnels-events-end-$theme.json"
+  for size in 760x620 1920x1080; do
+    "$app" --fixture --at 1 --state long-names --size "$size" --theme "$theme" \
+      --snap "snapshots/tunnels-long-names-$size-$theme.png" --tree "snapshots/tunnels-long-names-$size-$theme.json"
+  done
+  "$app" --fixture --theme "$theme" --script scripts/focus-switch.json --at 1 \
+    --snap "snapshots/focus-switch-$theme.png" --tree "snapshots/focus-switch-$theme.json"
+  "$app" --fixture --screen remove --theme "$theme" --script scripts/focus-confirm.json --at 1 \
+    --snap "snapshots/focus-confirm-$theme.png" --tree "snapshots/focus-confirm-$theme.json"
+  "$app" --fixture --state shared-failure --theme "$theme" --script scripts/shared-failure-settings.json --at 1 \
+    --snap "snapshots/shared-failure-settings-$theme.png" --tree "snapshots/shared-failure-settings-$theme.json"
   for dialog in edit remove discard start setup trust untrust get-started get-started-progress get-started-done open-link; do
     "$app" --fixture --screen "$dialog" --theme "$theme" \
       --snap "snapshots/dialog-$dialog-$theme.png" --tree "snapshots/dialog-$dialog-$theme.json"
@@ -34,7 +64,7 @@ for theme in light dark; do
       --script scripts/window-end.json --at 1 \
       --snap "snapshots/$screen-end-760x620-$theme.png" --tree "snapshots/$screen-end-760x620-$theme.json"
     for size in 760x620 1920x1080; do
-      "$app" --fixture --screen "$screen" --theme "$theme" --size "$size" \
+      "$app" --fixture --at 1 --screen "$screen" --theme "$theme" --size "$size" \
         --snap "snapshots/$screen-$size-$theme.png" --tree "snapshots/$screen-$size-$theme.json"
     done
   done

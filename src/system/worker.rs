@@ -54,9 +54,38 @@ pub fn find_cli(locator: Locator, handles: Vec<AppHandle<State>>) -> Sender<Opti
     std::thread::spawn(move || {
         for daemon in receive {
             let found = locator.locate(daemon.as_deref(), crate::cli::version_of);
+            let ca = match &found {
+                crate::cli::Cli::Ready { path, .. } => std::process::Command::new(path)
+                    .args(["tunnel", "ca-path"])
+                    .output()
+                    .map_err(|error| error.to_string())
+                    .and_then(|output| {
+                        if output.status.success() {
+                            Ok(PathBuf::from(
+                                String::from_utf8_lossy(&output.stdout).trim(),
+                            ))
+                        } else {
+                            Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+                        }
+                    }),
+                _ => Err("A current reoclo CLI is needed to locate the CA file.".into()),
+            };
             for handle in &handles {
                 let found = found.clone();
-                handle.update(move |s, _| s.cli = Some(found));
+                let ca = ca.clone();
+                handle.update(move |s, _| {
+                    s.cli = Some(found);
+                    match ca {
+                        Ok(path) => {
+                            s.ca_path = Some(path);
+                            s.ca_path_error = None;
+                        }
+                        Err(error) => {
+                            s.ca_path = None;
+                            s.ca_path_error = Some(error);
+                        }
+                    }
+                });
             }
         }
     });

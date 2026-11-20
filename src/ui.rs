@@ -1,19 +1,27 @@
+mod approvals;
 mod certificates;
+mod data_state;
 mod dialogs;
 mod fault;
 mod fixtures;
 mod form;
 mod hosts;
 mod links;
+mod modal;
 mod onboarding;
 mod panel;
+mod panel_tunnel;
 mod replies;
 mod settings;
 mod skeleton;
 mod state;
 pub use fault::Fault;
 mod primitives;
+mod terminal_tunnels;
+mod tunnel_detail;
+mod tunnel_health;
 mod tunnels;
+mod updates;
 use crate::theme::{self, *};
 pub use links::{Effect, LinkStep, PendingLink};
 pub use onboarding::SetupStatus;
@@ -39,6 +47,16 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         return rune_kit::root(body, layer);
     }
     let content = match s.phase {
+        ViewState::Offline | ViewState::SignedOut | ViewState::Error
+            if s.page == Page::Settings =>
+        {
+            settings::view(s, &k, &mut layer)
+        }
+        ViewState::Offline | ViewState::SignedOut | ViewState::Error
+            if !s.model.tunnels.is_empty() && s.page == Page::Tunnels =>
+        {
+            tunnels::view(s, &k)
+        }
         ViewState::Loaded | ViewState::Empty if s.has_tunnels() || s.page != Page::Tunnels => {
             match s.page {
                 Page::Hosts => hosts::view(s, &k),
@@ -79,7 +97,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         .build(&k);
     let status = if s.phase == ViewState::Offline {
         Some(primitives::indicator(primitives::Tone::Warning, "Daemon offline", &k).role("status"))
-    } else if s.busy {
+    } else if s.phase == ViewState::SignedOut {
+        Some(primitives::indicator(primitives::Tone::Warning, "Signed out", &k).role("status"))
+    } else if s.busy || !s.pending.is_empty() {
         Some(primitives::indicator(primitives::Tone::Info, "Working", &k).role("status"))
     } else {
         s.notice.as_ref().map(|notice| {
@@ -101,7 +121,19 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         .frame_inset(0.0)
         .reduced_motion(cx.is_reduced_motion())
         .build(&k);
-    let mut body = col().w_full().h_full().fill(k.c.page).child(body);
+    let mut body = col()
+        .w_full()
+        .h_full()
+        .fill(k.c.page)
+        .child(body)
+        .on_layout(|s: &mut State, [_, _, width, _]| {
+            s.viewport_width = width;
+            let compact = width < COMPACT_WIDTH;
+            if compact != s.compact {
+                s.compact = compact;
+                s.sidebar.set_open(!compact);
+            }
+        });
     if let Some(error) = &s.tray_error {
         body = body.child(
             text(error)

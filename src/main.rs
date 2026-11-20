@@ -43,6 +43,9 @@ fn keys(s: &mut State, event: &KeyEvent, tx: &mut Tx) -> bool {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if reoclo_desktop::update::finish_if_requested()? {
+        return Ok(());
+    }
     let mut screen = "tunnels".to_owned();
     let mut case = "loaded".to_owned();
     let mut args = Vec::new();
@@ -122,6 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service_plist = (!demo).then(|| daemon_plist.clone());
     let service_installed = demo || service_plist.as_ref().is_some_and(|plist| plist.exists());
     let onboarded = demo || preferences.onboarded;
+    let automatic_updates = preferences.automatic_updates;
     let mut app = App::new(spec())
         .titlebar(TITLEBAR)
         .init(move || State {
@@ -133,6 +137,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             modal: (!onboarded).then(|| "get-started".to_owned()),
             service_plist,
             service_installed,
+            updates: reoclo_desktop::update::Status {
+                automatic: automatic_updates,
+                ..Default::default()
+            },
             ..State::default()
         })
         .args(args)
@@ -181,7 +189,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     );
     let handles = vec![main.clone(), panel.clone()];
-    let (_connection, requests) = Connection::start(Client::new(socket), handles.clone());
+    let (_connection, requests) = Connection::start(Client::new(&socket), handles.clone());
     let runner: Box<dyn SystemRunner> = if demo {
         Box::new(FakeRunner)
     } else {
@@ -192,6 +200,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
     };
     let system = reoclo_desktop::system::worker::start(runner, handles.clone());
+    let updater = reoclo_desktop::update::worker::start(
+        executable.clone(),
+        handles.clone(),
+        automatic_updates,
+    );
     let finder = (!demo).then(|| {
         reoclo_desktop::system::worker::find_cli(
             Locator {
@@ -209,10 +222,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let requests = requests.clone();
         let system = system.clone();
         let main = main.clone();
+        let socket = socket.clone();
+        let updater = updater.clone();
         // Only the main window searches; the result reaches both windows.
         let finder = if index == 0 { finder.clone() } else { None };
         handle.update(move |s, _| {
             s.sender = Some(requests);
+            s.updater = Some(updater);
+            s.socket_path = socket;
             s.system_runner = Some(system);
             s.window_handle = Some(main);
             if demo {
@@ -227,6 +244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     tray::install(main.clone(), panel);
+    main.wake();
     if demo {
         main.open();
     }

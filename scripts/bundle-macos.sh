@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [[ $# -ne 1 ]]; then
-  printf 'Usage: scripts/bundle-macos.sh /absolute/path/to/reoclo\n' >&2
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  printf 'Usage: scripts/bundle-macos.sh /path/to/reoclo [/path/to/prebuilt-desktop]\n' >&2
   exit 2
 fi
 cli="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
@@ -12,13 +12,19 @@ if [[ -d "$PWD/.cache/rustup/toolchains" ]]; then
   export CARGO_HOME="$PWD/.cache/cargo"
 fi
 mkdir -p dist
-cargo build --release --locked --bin reoclo-desktop
+if [[ $# -eq 2 ]]; then
+  desktop="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+  [[ -x "$desktop" ]] || { printf 'Desktop binary is not executable: %s\n' "$desktop" >&2; exit 2; }
+else
+  cargo build --release --locked --bin reoclo-desktop
+  desktop="$PWD/target/release/reoclo-desktop"
+fi
 stage="$(mktemp -d "$PWD/dist/bundle.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 app="$stage/Reoclo.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 # macOS names the app menu's About, Hide and Quit items after the executable.
-cp target/release/reoclo-desktop "$app/Contents/MacOS/Reoclo"
+cp "$desktop" "$app/Contents/MacOS/Reoclo"
 cp "$cli" "$app/Contents/Resources/reoclo"
 cp assets/Info.plist "$app/Contents/Info.plist"
 cp assets/Reoclo.icns "$app/Contents/Resources/Reoclo.icns"

@@ -1,3 +1,11 @@
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub active: usize,
+    pub total: usize,
+    pub pending: usize,
+    pub failed: usize,
+}
+
 use crate::{
     model::{MenuBarStyle, TunnelState},
     ui::State,
@@ -123,8 +131,19 @@ const BAR_STROKE: u32 = 2;
 const MAX_BARS: u32 = 8;
 
 /// The text beside the icon. Pending approvals show in every style, because an agent is waiting.
-pub fn menu_title(style: MenuBarStyle, active: usize, pending: usize) -> Option<String> {
-    let approvals = (pending > 0).then(|| format!("({pending})"));
+pub fn menu_title(style: MenuBarStyle, counts: Counts) -> Option<String> {
+    let Counts {
+        active,
+        pending,
+        failed,
+        ..
+    } = counts;
+    let approvals = match (pending, failed > 0) {
+        (0, false) => None,
+        (0, true) => Some("!".into()),
+        (_, false) => Some(format!("({pending})")),
+        (_, true) => Some(format!("! ({pending})")),
+    };
     let base = match style {
         MenuBarStyle::Icon | MenuBarStyle::IconAndMeter => None,
         MenuBarStyle::IconAndName => Some("Reoclo".to_owned()),
@@ -137,7 +156,13 @@ pub fn menu_title(style: MenuBarStyle, active: usize, pending: usize) -> Option<
 }
 
 /// The icon as black with alpha. The meter adds one bar per tunnel: solid when active, outlined when not.
-pub fn icon_rgba(style: MenuBarStyle, active: usize, total: usize) -> (Vec<u8>, u32, u32) {
+pub fn icon_rgba(style: MenuBarStyle, counts: Counts) -> (Vec<u8>, u32, u32) {
+    let Counts {
+        active,
+        total,
+        failed,
+        ..
+    } = counts;
     let mark = mark_rgba(MARK_SIZE);
     let bars = u32::try_from(total).unwrap_or(MAX_BARS).min(MAX_BARS);
     if style != MenuBarStyle::IconAndMeter || bars == 0 {
@@ -154,14 +179,17 @@ pub fn icon_rgba(style: MenuBarStyle, active: usize, total: usize) -> (Vec<u8>, 
     }
     for bar in 0..bars {
         let left = MARK_SIZE + METER_GAP + bar * (BAR_WIDTH + BAR_GAP);
-        let solid = (bar as usize) < active;
+        let failed = (bar as usize) < failed;
+        let solid = !failed && (bar as usize) < active + counts.failed;
         for y in top..top + BAR_HEIGHT {
             for x in left..left + BAR_WIDTH {
                 let edge = x < left + BAR_STROKE
                     || x >= left + BAR_WIDTH - BAR_STROKE
                     || y < top + BAR_STROKE
                     || y >= top + BAR_HEIGHT - BAR_STROKE;
-                if solid || edge {
+                if (failed && y >= top + BAR_HEIGHT - BAR_STROKE * 2)
+                    || (!failed && (solid || edge))
+                {
                     out[(y * width * 4 + x * 4 + 3) as usize] = 255;
                 }
             }
@@ -188,15 +216,27 @@ impl State {
                 .count();
         let total = self.model.tunnels.len() + self.model.foreground.len();
         let pending = self.model.approvals.len();
-        let shown = (self.menu_bar, active, total, pending);
+        let failed = self
+            .model
+            .tunnels
+            .iter()
+            .filter(|t| t.enabled && t.state.failure())
+            .count();
+        let counts = Counts {
+            active,
+            total,
+            pending,
+            failed,
+        };
+        let shown = (self.menu_bar, counts);
         if self.tray_shown == Some(shown) {
             return;
         }
         let Some(tray) = &self.tray else {
             return;
         };
-        tray.set_title(menu_title(self.menu_bar, active, pending));
-        let (rgba, width, height) = icon_rgba(self.menu_bar, active, total);
+        tray.set_title(menu_title(self.menu_bar, counts));
+        let (rgba, width, height) = icon_rgba(self.menu_bar, counts);
         let result = Icon::from_rgba(rgba, width, height)
             .map_err(|error| error.to_string())
             .and_then(|icon| {
@@ -211,52 +251,5 @@ impl State {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mark_is_a_solid_black_hexagon_on_transparency() {
-        let size = MARK_SIZE as usize;
-        let rgba = mark_rgba(MARK_SIZE);
-        assert_eq!(rgba.len(), size * size * 4);
-        let alpha = |x: usize, y: usize| rgba[(y * size + x) * 4 + 3];
-        assert_eq!(alpha(size / 2, size / 2), 255);
-        assert_eq!(alpha(0, 0), 0);
-        assert_eq!(alpha(size - 1, size - 1), 0);
-        assert!(rgba.chunks(4).all(|p| p[..3] == [0, 0, 0]));
-    }
-
-    #[test]
-    fn the_title_follows_the_style_and_always_shows_waiting_approvals() {
-        use MenuBarStyle::*;
-        assert_eq!(menu_title(Icon, 3, 0), None);
-        assert_eq!(menu_title(IconAndName, 3, 0).as_deref(), Some("Reoclo"));
-        assert_eq!(menu_title(IconAndCount, 3, 0).as_deref(), Some("3"));
-        assert_eq!(menu_title(IconAndMeter, 3, 0), None);
-        assert_eq!(menu_title(Icon, 3, 2).as_deref(), Some("(2)"));
-        assert_eq!(menu_title(IconAndCount, 3, 2).as_deref(), Some("3 (2)"));
-    }
-
-    #[test]
-    fn only_the_meter_style_widens_the_icon() {
-        assert_eq!(icon_rgba(MenuBarStyle::Icon, 2, 3).1, MARK_SIZE);
-        assert_eq!(icon_rgba(MenuBarStyle::IconAndMeter, 0, 0).1, MARK_SIZE);
-        let (_, one, _) = icon_rgba(MenuBarStyle::IconAndMeter, 1, 1);
-        let (_, three, _) = icon_rgba(MenuBarStyle::IconAndMeter, 1, 3);
-        assert_eq!(three - one, 2 * (BAR_WIDTH + BAR_GAP));
-        let (_, capped, _) = icon_rgba(MenuBarStyle::IconAndMeter, 1, 40);
-        assert_eq!(capped, icon_rgba(MenuBarStyle::IconAndMeter, 1, 8).1);
-    }
-
-    #[test]
-    fn a_meter_bar_is_solid_when_active_and_hollow_when_not() {
-        let (rgba, width, _) = icon_rgba(MenuBarStyle::IconAndMeter, 1, 2);
-        let alpha = |x: u32, y: u32| rgba[(y * width * 4 + x * 4 + 3) as usize];
-        let middle = MARK_SIZE / 2;
-        let first = MARK_SIZE + METER_GAP + BAR_WIDTH / 2;
-        let second = first + BAR_WIDTH + BAR_GAP;
-        assert_eq!(alpha(first, middle), 255);
-        assert_eq!(alpha(second, middle), 0);
-        assert_eq!(alpha(second - BAR_WIDTH / 2, middle), 255);
-    }
-}
+#[path = "tray_tests.rs"]
+mod tests;

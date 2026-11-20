@@ -1,0 +1,87 @@
+name: Release desktop
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing mirrored tag to release, such as v0.5.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+concurrency:
+  group: desktop-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      CARGO_BUILD_JOBS: "3"
+      RUSTUP_HOME: ${{ github.workspace }}/.cache/rustup
+      CARGO_HOME: ${{ github.workspace }}/.cache/cargo
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Check release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "reoclo-desktop") | .version')"
+          [[ "$RELEASE_TAG" == "v$version" ]] || { echo "Tag must equal v$version" >&2; exit 1; }
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Build universal desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          for arch in aarch64 x86_64; do
+            cargo build --locked --release --bin reoclo-desktop --target "$arch-apple-darwin"
+          done
+          mkdir -p dist
+          lipo -create target/aarch64-apple-darwin/release/reoclo-desktop \
+            target/x86_64-apple-darwin/release/reoclo-desktop -output dist/reoclo-desktop-universal
+          lipo -verify_arch arm64 x86_64 dist/reoclo-desktop-universal
+          cargo build --locked --release --bin update-sign
+      - name: Fetch and verify released CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cli_tag="$(gh api repos/reoclo/cli/releases/latest --jq .tag_name)"
+          mkdir -p dist/cli
+          gh release download "$cli_tag" --repo reoclo/cli --dir dist/cli \
+            --pattern reoclo-darwin-arm64 --pattern reoclo-darwin-x64 --pattern SHA256SUMS
+          cd dist/cli
+          awk '$2 == "reoclo-darwin-arm64" || $2 == "*reoclo-darwin-arm64" || $2 == "reoclo-darwin-x64" || $2 == "*reoclo-darwin-x64"' SHA256SUMS > selected-checksums
+          [[ "$(wc -l < selected-checksums | tr -d ' ')" == 2 ]]
+          shasum -a 256 -c selected-checksums
+          chmod +x reoclo-darwin-arm64 reoclo-darwin-x64
+          lipo -create reoclo-darwin-arm64 reoclo-darwin-x64 -output ../reoclo-universal
+          lipo -verify_arch arm64 x86_64 ../reoclo-universal
+          echo "CLI_VERSION=$cli_tag" >> "$GITHUB_ENV"
+      - name: Bundle and sign update archive
+        shell: bash
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          scripts/bundle-macos.sh "$PWD/dist/reoclo-universal" "$PWD/dist/reoclo-desktop-universal"
+          bash scripts/package-release.sh "$VERSION" "$CLI_VERSION" "$PWD/target/release/update-sign"
+      - name: Publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Reoclo $VERSION" --notes-file dist/release-notes.txt --draft \
+            "dist/Reoclo-$VERSION.dmg" "dist/Reoclo-$VERSION.app.tar.gz" dist/latest.json
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

@@ -1,96 +1,6 @@
+mod tunnel;
 use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TunnelState {
-    #[default]
-    Down,
-    Ready,
-    Connecting,
-    Active,
-    Reconnecting,
-    NeedsSignIn,
-    ServerOffline,
-    QuotaReached,
-    Expired,
-    ClosedByOperator,
-    Forbidden,
-    Failed,
-    #[serde(other)]
-    Unknown,
-}
-
-impl TunnelState {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Down => "Down",
-            Self::Ready => "Ready",
-            Self::Connecting => "Connecting",
-            Self::Active => "Active",
-            Self::Reconnecting => "Reconnecting",
-            Self::NeedsSignIn => "Sign in required",
-            Self::ServerOffline => "Server offline",
-            Self::QuotaReached => "Limit reached",
-            Self::Expired => "Expired",
-            Self::ClosedByOperator => "Closed by operator",
-            Self::Forbidden => "Access refused",
-            Self::Failed => "Failed",
-            Self::Unknown => "Unknown",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(default)]
-pub struct TunnelTraffic {
-    pub bytes_in: u64,
-    pub bytes_out: u64,
-    pub streams: u32,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(default)]
-pub struct TunnelView {
-    pub name: String,
-    pub org: String,
-    pub server: String,
-    pub server_id: String,
-    pub kind: String,
-    pub state: TunnelState,
-    pub message: String,
-    pub action: String,
-    pub detail: Option<String>,
-    pub enabled: bool,
-    pub keep_up: bool,
-    pub endpoint: Option<String>,
-    pub target: Option<String>,
-    pub local_port: Option<u16>,
-    pub remote_port: Option<u16>,
-    pub local_target: Option<String>,
-    pub hostname: Option<String>,
-    pub url: Option<String>,
-    pub via: Option<String>,
-    pub share: Option<Share>,
-    pub traffic: TunnelTraffic,
-}
-
-impl TunnelView {
-    /// Where the tunnel goes: its server, or this Mac for a local route.
-    pub fn place(&self) -> &str {
-        if self.kind == "local" || self.server.is_empty() {
-            "This Mac"
-        } else {
-            &self.server
-        }
-    }
-
-    pub fn endpoint(&self) -> &str {
-        self.url
-            .as_deref()
-            .or(self.endpoint.as_deref())
-            .unwrap_or("Not listening")
-    }
-}
+pub use tunnel::{TunnelState, TunnelTraffic, TunnelView};
 
 /// What the menu bar item shows.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -126,7 +36,7 @@ impl MenuBarStyle {
 }
 
 /// Choices that belong to this Mac's app rather than the daemon.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Preferences {
     pub menu_bar: MenuBarStyle,
@@ -134,6 +44,18 @@ pub struct Preferences {
     pub onboarded: bool,
     /// The port 443 relay setting a running helper last reported, kept for a reinstall while the helper is down.
     pub relay: bool,
+    pub automatic_updates: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            menu_bar: MenuBarStyle::default(),
+            onboarded: false,
+            relay: false,
+            automatic_updates: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -296,7 +218,8 @@ pub struct Approval {
     pub agent: String,
     pub action: String,
     pub description: String,
-    pub expires_at: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub expires_at: Option<time::OffsetDateTime>,
     pub status: String,
     pub error: Option<ApprovalError>,
 }

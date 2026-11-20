@@ -1,11 +1,6 @@
-use super::{State, ViewState};
-use crate::{
-    control::segment,
-    model::{ForegroundForward, TunnelState},
-    theme::*,
-};
+use crate::{model::TunnelState, theme::*};
 use rune::{El, col, el, row, text};
-use rune_kit::{Button, ButtonVariant, ControlSize, IconButton, IconButtonVariant, Kit, glyphs};
+use rune_kit::{Button, ButtonVariant, ControlSize, Kit};
 
 /// What a status mark says. Each tone has its own shape, so color is never the only signal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,7 +86,7 @@ pub fn spacer() -> El {
 pub fn title(name: &str, detail: Option<&str>, k: &Kit) -> El {
     let mut head = col()
         .gap(XS)
-        .child(text(name).font(TITLE).color(k.c.text_base));
+        .child(text(name).role("heading").font(TITLE).color(k.c.text_base));
     if let Some(detail) = detail {
         head = head.child(text(detail).font(BODY).color(k.c.text_muted).wrap());
     }
@@ -105,7 +100,16 @@ pub fn field(label: &str, value: &str, k: &Kit) -> El {
         .child(text(label).font(LABEL).color(k.c.text_muted))
         .child(
             text(value)
-                .font(MONO)
+                .font(
+                    if matches!(
+                        value,
+                        "This Mac" | "Not listening" | "Not set" | "Not available"
+                    ) {
+                        HINT
+                    } else {
+                        MONO
+                    },
+                )
                 .color(k.c.text_base)
                 .wrap()
                 .selectable(true)
@@ -195,306 +199,6 @@ pub fn alert(message: &str, k: &Kit) -> El {
         )
 }
 
-/// Requests from agents, which stay blocked until someone answers.
-pub fn approvals(s: &State, k: &Kit) -> Option<El> {
-    let count = s.model.approvals.len();
-    if count == 0 {
-        return None;
-    }
-    let heading = format!(
-        "{count} pending approval{}",
-        if count == 1 { "" } else { "s" }
-    );
-    let mut list = col()
-        .w_full()
-        .gap(MD)
-        .child(indicator(Tone::Warning, &heading, k));
-    for approval in &s.model.approvals {
-        let approve = format!("/v1/approvals/{}/approve", segment(&approval.id));
-        let deny = format!("/v1/approvals/{}/deny", segment(&approval.id));
-        let detail = col()
-            .gap(XS)
-            .min_w(0.0)
-            .child(text(&approval.agent).font(BODY).color(k.c.text_base).wrap())
-            .child(
-                text(&approval.description)
-                    .font(BODY)
-                    .color(k.c.text_muted)
-                    .wrap(),
-            );
-        let actions = row()
-            .gap(SM)
-            .child(
-                Button::new("Approve")
-                    .disabled(s.busy)
-                    .on_press(move |s: &mut State| s.request("POST", &approve, None))
-                    .primary(k)
-                    .key(format!("approve-{}", approval.id)),
-            )
-            .child(
-                Button::new("Deny")
-                    .disabled(s.busy)
-                    .on_press(move |s: &mut State| s.request("POST", &deny, None))
-                    .secondary(k)
-                    .key(format!("deny-{}", approval.id)),
-            );
-        list = list.child(if s.panel {
-            col().w_full().gap(SM).child(detail).child(actions)
-        } else {
-            row()
-                .w_full()
-                .gap(LG)
-                .center_y()
-                .child(detail.grow(1.0))
-                .child(actions)
-        });
-    }
-    Some(list)
-}
-
-fn forward_line(f: &ForegroundForward) -> String {
-    let line = format!("{} \u{2192} {}", f.listen, f.target);
-    if f.proto == "udp" {
-        format!("{line} (udp)")
-    } else {
-        line
-    }
-}
-
-fn ask_to_stop(s: &mut State, id: &str) {
-    s.stop_target = Some(id.to_owned());
-    s.modal = Some("stop-terminal".into());
-}
-
-/// Tunnels started with `reoclo tunnel` in a terminal, reported by the daemon.
-pub fn terminal_tunnels(s: &State, k: &Kit) -> Option<El> {
-    if s.model.foreground.is_empty() {
-        return None;
-    }
-    let mut section = col().key("terminal-tunnels").w_full().gap(MD).child(
-        text("Running in a terminal")
-            .font(LABEL)
-            .color(k.c.text_base),
-    );
-    for tunnel in &s.model.foreground {
-        let mut forwards = col().w_full().min_w(0.0).gap(XS);
-        for (index, forward) in tunnel.forwards.iter().enumerate() {
-            let line = forward_line(forward);
-            let mut entry = row().w_full().gap(MD).center_y().min_w(0.0).child(
-                text(&line)
-                    .font(MONO)
-                    .color(k.c.text_muted)
-                    .truncate()
-                    .selectable(true)
-                    .help_when_truncated(&line)
-                    .min_w(0.0)
-                    .shrink(),
-            );
-            if !s.panel && forward.kind == "forward" && forward.proto == "tcp" {
-                let org = tunnel.org.clone();
-                let server = tunnel.server.clone();
-                let target = forward.target.clone();
-                let name = format!("web-{}", target.rsplit(':').next().unwrap_or("tunnel"));
-                entry = entry.child(
-                    Button::new("Add HTTPS")
-                        .control_size(ControlSize::Small)
-                        .help("Reach this service at a local HTTPS address")
-                        .on_press(move |s: &mut State| {
-                            s.begin_https(&org, &server, &target, name.clone())
-                        })
-                        .build(k)
-                        .border(RULE, k.c.border_strong)
-                        .key(format!("https-terminal-{}-{index}", tunnel.id)),
-                );
-            }
-            forwards = forwards.child(entry);
-        }
-        let id = tunnel.id.clone();
-        let key = format!("stop-terminal-{}", tunnel.id);
-        let name = row()
-            .gap(SM)
-            .center_y()
-            .min_w(0.0)
-            .shrink()
-            .child(
-                text(&tunnel.server)
-                    .font(BODY)
-                    .color(k.c.text_base)
-                    .truncate()
-                    .help_when_truncated(&tunnel.server)
-                    .min_w(0.0)
-                    .shrink(),
-            )
-            .child(text(&tunnel.org).font(HINT).color(k.c.text_muted));
-        section = section.child(if s.panel {
-            col()
-                .w_full()
-                .gap(XS)
-                .child(
-                    row()
-                        .w_full()
-                        .gap(SM)
-                        .center_y()
-                        .child(name.grow(1.0))
-                        .child(status(tunnel.state, k))
-                        .child(
-                            IconButton::new(&glyphs::CLOSE)
-                                .variant(IconButtonVariant::GhostMuted)
-                                .label(format!("Stop {}", tunnel.server))
-                                .disabled(s.busy)
-                                .on_press(move |s: &mut State| ask_to_stop(s, &id))
-                                .build(k)
-                                .key(key),
-                        ),
-                )
-                .child(forwards)
-        } else {
-            row()
-                .w_full()
-                .gap(LG)
-                .center_y()
-                .child(
-                    col()
-                        .grow(1.0)
-                        .min_w(0.0)
-                        .gap(XS)
-                        .child(name)
-                        .child(forwards),
-                )
-                .child(status(tunnel.state, k))
-                .child(
-                    Button::new("Stop")
-                        .disabled(s.busy)
-                        .on_press(move |s: &mut State| ask_to_stop(s, &id))
-                        .danger(k)
-                        .key(key),
-                )
-        });
-    }
-    Some(section)
-}
-
-/// The sign-in code, the buttons that use it and the page to finish in. `prefix` keeps keys
-/// unique when this shows over another copy of itself.
-pub fn device_code(s: &State, k: &Kit, prefix: &str) -> Vec<El> {
-    let Some(code) = &s.model.auth.user_code else {
-        return Vec::new();
-    };
-    let mut items = vec![
-        col()
-            .gap(XS)
-            .child(text("Device code").font(LABEL).color(k.c.text_muted))
-            .child(
-                text(code)
-                    .font(CODE)
-                    .color(k.c.text_base)
-                    .selectable(true)
-                    .selection_color(k.selection()),
-            ),
-    ];
-    let code = code.clone();
-    let mut actions = row().gap(SM);
-    if let Some(url) = s.model.auth.verification_uri_complete.as_ref().or(s
-        .model
-        .auth
-        .verification_uri
-        .as_ref())
-    {
-        let url = url.clone();
-        actions = actions.child(
-            Button::new("Open sign-in page")
-                .on_press_tx(move |s: &mut State, tx| {
-                    if let Err(error) = tx.open_url(&url) {
-                        s.error = Some(error.to_string());
-                    }
-                })
-                .primary(k)
-                .key(format!("{prefix}open-sign-in")),
-        );
-    }
-    actions = actions.child(
-        Button::new("Copy device code")
-            .on_press_tx(move |s: &mut State, tx| {
-                tx.copy(&code);
-                s.notice = Some("Device code copied.".into());
-            })
-            .secondary(k)
-            .key(format!("{prefix}copy-device-code")),
-    );
-    items.push(actions);
-    if let Some(url) = &s.model.auth.verification_uri {
-        items.push(field("Continue in your browser", url, k));
-    }
-    items
-}
-
-pub fn data_state(s: &State, k: &Kit) -> El {
-    if s.phase == ViewState::Loading {
-        return super::skeleton::view(s, k);
-    }
-    let (heading, detail, action) = match s.phase {
-        ViewState::Loading => ("Loading local state", "Reading the tunnel daemon.", None),
-        ViewState::Empty => (
-            "No local tunnels",
-            "Add a tunnel to reach a service on one of your servers.",
-            Some("Add tunnel"),
-        ),
-        ViewState::Offline => (
-            "Daemon not running",
-            "Start the local daemon to use your saved tunnels.",
-            Some("Start daemon"),
-        ),
-        ViewState::SignedOut => (
-            "Sign in to Reoclo",
-            "Authorize this Mac in your browser. Tokens stay in the daemon.",
-            Some("Sign in"),
-        ),
-        ViewState::Error => (
-            "Could not load local state",
-            s.error
-                .as_deref()
-                .unwrap_or("The daemon did not return a valid response."),
-            Some("Retry"),
-        ),
-        ViewState::Loaded => ("", "", None),
-    };
-    let compact = s.panel || s.modal.is_some();
-    let mut body = col()
-        .key("data-state")
-        .role("status")
-        .w_full()
-        .padding(if compact { LG } else { XL })
-        .gap(if compact { LG } else { XL });
-    if !compact {
-        body = body.child(title(s.page.name(), None, k));
-    }
-    body = body.child(
-        col()
-            .gap(SM)
-            .child(text(heading).font(HEADING).color(k.c.text_base))
-            .child(text(detail).font(BODY).color(k.c.text_muted).wrap()),
-    );
-    for item in device_code(s, k, "") {
-        body = body.child(item);
-    }
-    if let Some(label) = action
-        && !(s.panel && s.phase == ViewState::Empty)
-        && !(s.phase == ViewState::SignedOut && s.model.auth.user_code.is_some())
-    {
-        body = body.child(
-            row().child(
-                Button::new(label)
-                    .on_press(move |s: &mut State| match s.phase {
-                        ViewState::Empty => s.begin_add(),
-                        ViewState::SignedOut => s.request("POST", "/v1/auth/login", None),
-                        ViewState::Offline => s.modal = Some("start".into()),
-                        ViewState::Error => s.request("GET", "/v1/tunnels", None),
-                        ViewState::Loading | ViewState::Loaded => {}
-                    })
-                    .primary(k)
-                    .key("state-action"),
-            ),
-        );
-    }
-    body
-}
+pub use super::approvals::approvals;
+pub use super::data_state::{data_state, device_code};
+pub use super::terminal_tunnels::terminal_tunnels;

@@ -1,3 +1,4 @@
+mod events;
 use super::{Fault, Request, State, ViewState};
 use crate::model::*;
 use serde_json::Value;
@@ -8,35 +9,8 @@ impl State {
         self.sync_tray();
     }
 
-    /// A daemon event arrived on the event stream.
-    pub fn apply_event(&mut self, name: &str, data: &str) {
-        if let Err(error) = self.model.apply(name, data) {
-            self.error = Some(format!("Invalid daemon event: {error}"));
-        }
-        match name {
-            "auth" => match self.model.auth.status.as_str() {
-                "success" => {
-                    self.phase = ViewState::Loaded;
-                    self.error = None;
-                    self.model.status.signed_in = Some(true);
-                    self.link_signed_in();
-                }
-                "pending" => self.phase = ViewState::SignedOut,
-                "failed" => {
-                    self.phase = ViewState::SignedOut;
-                    self.error = self.model.auth.message.clone();
-                    self.link = None;
-                }
-                _ => {}
-            },
-            "tunnel" => self.link_check_tunnel(),
-            _ => {}
-        }
-        self.sync_tray();
-    }
-
     fn apply_response(&mut self, request: &Request, response: Result<Value, Fault>) {
-        self.busy = false;
+        self.pending.remove(&request.path);
         match response {
             Ok(value) => {
                 if let Err(error) = self.accept(request, value) {
@@ -112,8 +86,8 @@ impl State {
                 }
             }
             ("GET", "/v1/tunnels") => {
-                self.model.tunnels = serde_json::from_value::<TunnelList>(value)?.tunnels;
-                self.model.sort();
+                self.model
+                    .replace_tunnels(serde_json::from_value::<TunnelList>(value)?.tunnels);
                 if self.model.status.signed_in == Some(false) {
                     self.phase = ViewState::SignedOut;
                 } else {
@@ -188,7 +162,6 @@ impl State {
                 let tunnel: TunnelView = serde_json::from_value(value)?;
                 self.model.selected = Some(tunnel.name.clone());
                 self.model.tunnels.push(tunnel);
-                self.model.sort();
                 self.modal = None;
                 self.phase = ViewState::Loaded;
             }
@@ -231,9 +204,7 @@ impl State {
             }
             ("PATCH" | "POST", path) if path.starts_with("/v1/tunnels/") => {
                 let tunnel: TunnelView = serde_json::from_value(value)?;
-                self.model.tunnels.retain(|t| t.name != tunnel.name);
-                self.model.tunnels.push(tunnel);
-                self.model.sort();
+                self.model.update_tunnel(tunnel);
                 self.modal = None;
             }
             ("POST", "/v1/ca/trust") => {

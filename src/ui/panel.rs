@@ -1,7 +1,7 @@
 use super::{State, primitives::*};
-use crate::{control::segment, model::TunnelState, theme::*};
+use crate::{model::TunnelState, theme::*};
 use rune::{El, ScrollSpec, col, el, row, text};
-use rune_kit::{Button, IconButton, IconButtonVariant, Kit, Switch, glyphs};
+use rune_kit::{Button, Kit};
 
 pub fn view(s: &State, k: &Kit) -> El {
     let mut header = row()
@@ -23,20 +23,36 @@ pub fn view(s: &State, k: &Kit) -> El {
                 .iter()
                 .filter(|t| t.state == TunnelState::Active)
                 .count();
+        let failed = s
+            .model
+            .tunnels
+            .iter()
+            .filter(|t| t.enabled && t.state.failure())
+            .count();
         header = header.child(
-            text(format!("{active} active"))
-                .font(HINT)
-                .color(k.c.text_muted),
+            text(if s.current_data() {
+                format!("{active} active")
+            } else {
+                "Unknown".into()
+            })
+            .font(HINT)
+            .color(k.c.text_muted),
         );
+        if failed > 0 && s.current_data() {
+            header = header.child(indicator(Tone::Danger, &format!("{failed} failed"), k));
+        }
     }
     let mut list = col().w_full().padding(LG).gap(LG);
     if s.has_tunnels() {
-        if let Some(requests) = approvals(s, k) {
+        if !s.current_data() {
+            list = list.child(super::data_state::phase_alert(s, k));
+        }
+        if let Some(requests) = approvals(s, k).filter(|_| s.current_data()) {
             list = list
                 .child(requests)
                 .child(el().h(RULE).w_full().fill(k.c.border_base));
         }
-        if let Some(running) = terminal_tunnels(s, k) {
+        if let Some(running) = terminal_tunnels(s, k).filter(|_| s.current_data()) {
             list = list.child(running);
         }
         for ((org, server), tunnels) in s.model.groups() {
@@ -56,90 +72,7 @@ pub fn view(s: &State, k: &Kit) -> El {
                     .child(text(org).font(HINT).color(k.c.text_muted)),
             );
             for tunnel in tunnels {
-                let path = format!(
-                    "/v1/tunnels/{}/{}",
-                    segment(&tunnel.name),
-                    if tunnel.enabled { "down" } else { "up" }
-                );
-                let copy = tunnel.endpoint().to_owned();
-                // Copy is last so it keeps its column on rows without a URL.
-                let mut controls = row().gap(XS).center_y();
-                if let Some(url) = tunnel.url.clone() {
-                    controls = controls.child(
-                        IconButton::new(&glyphs::ARROW_RIGHT)
-                            .variant(IconButtonVariant::GhostMuted)
-                            .label("Open in browser")
-                            .on_press_tx(move |s: &mut State, tx| {
-                                if let Err(error) = tx.open_url(&url) {
-                                    s.error = Some(error.to_string());
-                                }
-                            })
-                            .build(k)
-                            .key(format!("open-{}", tunnel.name)),
-                    );
-                }
-                let controls = controls.child(
-                    IconButton::new(&glyphs::COPY)
-                        .variant(IconButtonVariant::GhostMuted)
-                        .label(if tunnel.url.is_some() {
-                            "Copy URL"
-                        } else {
-                            "Copy endpoint"
-                        })
-                        .on_press_tx(move |s: &mut State, tx| {
-                            tx.copy(&copy);
-                            s.notice = Some("Endpoint copied.".into());
-                        })
-                        .build(k)
-                        .key(format!("copy-{}", tunnel.name)),
-                );
-                // The open action already says this is a web address, so the
-                // scheme can give its width to the hostname and port.
-                let endpoint = tunnel.endpoint();
-                let shown = endpoint.strip_prefix("https://").unwrap_or(endpoint);
-                let mut item = col()
-                    .w_full()
-                    .gap(XS)
-                    .child(
-                        row()
-                            .w_full()
-                            .gap(SM)
-                            .center_y()
-                            .child(
-                                text(&tunnel.name)
-                                    .font(BODY)
-                                    .color(k.c.text_base)
-                                    .truncate()
-                                    .help_when_truncated(&tunnel.name)
-                                    .grow(1.0)
-                                    .min_w(0.0),
-                            )
-                            .child(status(tunnel.state, k))
-                            .child(controls)
-                            .child(
-                                Switch::new(tunnel.enabled)
-                                    .label(format!("{} tunnel up", tunnel.name))
-                                    .hide_label()
-                                    .disabled(s.busy)
-                                    .on_toggle(move |s: &mut State| s.request("POST", &path, None))
-                                    .build(k)
-                                    .key(format!("toggle-{}", tunnel.name)),
-                            ),
-                    )
-                    .child(
-                        text(shown)
-                            .font(MONO)
-                            .color(k.c.text_muted)
-                            .truncate()
-                            .selectable(true)
-                            .help_when_truncated(endpoint)
-                            .w_full()
-                            .min_w(0.0),
-                    );
-                if tunnel.share.as_ref().is_some_and(|share| share.tailnet) {
-                    item = item.child(indicator(Tone::Info, "Shared with tailnet", k));
-                }
-                group = group.child(item);
+                group = group.child(super::panel_tunnel::view(tunnel, s, k));
             }
             list = list.child(group);
         }
@@ -173,7 +106,8 @@ pub fn view(s: &State, k: &Kit) -> El {
         )
         .child(spacer())
         .child(
-            Button::new("Quit")
+            Button::new("Quit Reoclo")
+                .help("Tunnels keep running in the background service.")
                 .on_press_tx(|_: &mut State, tx| tx.quit())
                 .secondary(k)
                 .key("quit"),
@@ -187,7 +121,7 @@ pub fn view(s: &State, k: &Kit) -> El {
         .child(header)
         .child(el().h(RULE).w_full().fill(k.c.border_base))
         .child(k.scroll_bar(viewport));
-    let error = if s.has_tunnels() && s.modal.is_none() {
+    let error = if s.has_tunnels() && s.current_data() && s.modal.is_none() {
         s.error.as_deref()
     } else {
         None
@@ -207,6 +141,11 @@ pub fn view(s: &State, k: &Kit) -> El {
                     .wrap()
                     .padding(MD),
             );
+    }
+    if let Some(update) = super::settings::updates_section::panel(s, k) {
+        panel = panel
+            .child(el().h(RULE).w_full().fill(k.c.border_base))
+            .child(update);
     }
     panel
         .child(el().h(RULE).w_full().fill(k.c.border_base))

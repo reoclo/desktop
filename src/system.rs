@@ -17,6 +17,7 @@ pub enum SystemAction {
     RestartDaemon,
     SetupHosts(HelperSetup),
     StartAtLogin(bool),
+    ShowLog(PathBuf),
 }
 
 pub trait SystemRunner: Send + 'static {
@@ -95,6 +96,9 @@ impl SystemRunner for MacRunner {
     fn run(&self, action: &SystemAction, cli: Option<&Path>) -> Result<String, String> {
         let cli = || cli.ok_or_else(|| "No reoclo CLI was found to run.".to_owned());
         let output = match action {
+            SystemAction::ShowLog(path) => {
+                Command::new("/usr/bin/open").arg("-R").arg(path).output()
+            }
             SystemAction::InstallDaemon => Command::new(cli()?)
                 .args(["tunnel", "daemon", "install"])
                 .output(),

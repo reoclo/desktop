@@ -1,4 +1,5 @@
 use crate::{control::segment, ui::State};
+use rune::TextEdit;
 use serde_json::json;
 
 /// The hostname a tunnel gets on the built-in domain when none is typed.
@@ -108,5 +109,41 @@ pub(super) fn save(s: &mut State) {
         );
     } else {
         s.request("POST", "/v1/tunnels", Some(body));
+    }
+}
+
+impl State {
+    pub fn edit_selected(&mut self) {
+        if let Some(tunnel) = self.selected().cloned() {
+            self.name = TextEdit::new(&tunnel.name);
+            self.target = TextEdit::new(
+                tunnel
+                    .target
+                    .as_deref()
+                    .or(tunnel.local_target.as_deref())
+                    .unwrap_or(""),
+            );
+            let host = tunnel.hostname.clone().unwrap_or_default();
+            let domain = self
+                .trusted_domains()
+                .into_iter()
+                .filter(|d| host == *d || host.ends_with(&format!(".{d}")))
+                .max_by_key(String::len)
+                .unwrap_or_default();
+            self.domain = domain;
+            self.hostname = TextEdit::new(host);
+            self.local_port = TextEdit::new(
+                tunnel
+                    .local_port
+                    .or(tunnel.remote_port)
+                    .unwrap_or(15432)
+                    .to_string(),
+            );
+            self.org = tunnel.org;
+            self.server = tunnel.server_id;
+            self.kind = tunnel.kind;
+            self.via = tunnel.via.unwrap_or_else(|| "reoclo".into());
+            self.modal = Some("edit".into());
+        }
     }
 }

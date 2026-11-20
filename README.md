@@ -53,7 +53,7 @@ Certificates manages the local certificate authority and the domains it may sign
 
 ## Requirements
 
-You need macOS 13 or later and a [Reoclo](https://reoclo.com) account. The app drives the tunnel daemon in the Reoclo CLI, version 0.103.1 or later, so install the CLI first:
+You need macOS 13 or later and a [Reoclo](https://reoclo.com) account. Release downloads include a universal Reoclo CLI. If you already have the CLI installed, the app uses that copy. Keep it current with Homebrew:
 
 ```sh
 brew install reoclo/tap/reoclo
@@ -61,7 +61,15 @@ brew install reoclo/tap/reoclo
 
 ## Install
 
-There is no signed download yet, so build the app from source. You need [rustup](https://rustup.rs), which installs the pinned compiler on the first build, and [uv](https://docs.astral.sh/uv/), which builds the disk image.
+Download the DMG from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is not notarized yet, so on first open, right-click Reoclo and choose **Open**.
+
+You can also install it with Homebrew:
+
+```sh
+brew install --cask reoclo/tap/reoclo-desktop
+```
+
+To build from source, install [rustup](https://rustup.rs) and [uv](https://docs.astral.sh/uv/). Rustup installs the pinned compiler on the first build; uv builds the disk image. Install the CLI with the command above first.
 
 ```sh
 git clone https://github.com/reoclo/desktop.git
@@ -89,6 +97,19 @@ Actions that change the system, such as installing the background service or the
 A `reoclo://open` link opens a service on a server after you confirm it. The app signs in if needed, reuses or adds the matching tunnel, then opens the HTTPS address or copies the local endpoint.
 
 Start at login writes only the app's own launch agent and applies at the next macOS login.
+
+## Updates
+
+Reoclo checks GitHub Releases after launch and every 6 hours. It downloads newer versions in the background and verifies the archive's SHA-256 and Ed25519 signature against the key embedded in the app. Settings shows the last check and offers **Check now**. Turn off **Automatic checks** to check manually.
+
+When an update is verified, choose **Restart to update** in Settings or **Restart** in the menu-bar panel. Reoclo never restarts on its own. It checks the extracted bundle version and stages the replacement on the app's volume. After the current process exits, it swaps the bundles and opens the new copy. If opening fails, it restores the previous app. Your tunnels keep running.
+
+Updates are off outside an app bundle or when its folder is not writable, including a mounted disk image. Settings explains the reason. A failed download is discarded and reported there.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-dark.png">
+  <img alt="Settings with a verified update and the Restart to update button" src="docs/images/settings-light.png">
+</picture>
 
 ## Development
 
@@ -118,7 +139,7 @@ cargo run --bin reoclo-desktop -- \
 ```
 
 Screens: `tunnels`, `add`, `edit`, `hosts`, `certificates`, `settings`, `panel`.
-Data states: `loaded`, `loading`, `empty`, `terminal`, `offline`, `signed-out`, `device-code`, `error`.
+Data states: `loaded`, `loading`, `empty`, `terminal`, `offline`, `signed-out`, `device-code`, `error`. Update fixtures: `update-available`, `update-ready`, `update-error`, `update-disabled`.
 Tunnel-state fixtures accept the daemon's twelve state names, and `--reduced-motion` forces reduced motion.
 
 For an explicit fake socket, run `cargo run --bin fake-daemon -- /path/to/socket`. It prints `READY` once bound; send `quit` on stdin to stop it. Then pass `--socket /path/to/socket` to the app.
@@ -142,7 +163,19 @@ After a UI change, `bash scripts/readme-images.sh` renders the screenshots in th
 
 ### Packaging
 
-`scripts/bundle-macos.sh /path/to/reoclo` builds `dist/Reoclo.app` with that CLI binary inside, signs both ad hoc, verifies the signature and writes `dist/Reoclo.dmg`. It neither installs nor launches the app, and it never fetches or substitutes a CLI. The disk image window is built with `dmgbuild` through `uvx`; its background comes from `assets/dmg/background.html`.
+`scripts/bundle-macos.sh /path/to/reoclo` builds `dist/Reoclo.app` with that CLI binary inside, signs both ad hoc, verifies the signature and writes `dist/Reoclo.dmg`. Pass a prebuilt desktop binary as a second argument to package a universal build. The script neither installs nor launches the app, and it never fetches or substitutes a CLI. The disk image window is built with `dmgbuild` through `uvx`; its background comes from `assets/dmg/background.html`.
+
+### Releases
+
+The private Gitea repository mirrors branches and tags to `reoclo/desktop` on GitHub. Pushing a tag such as `v0.5.0` runs [.github/workflows/release.yml](.github/workflows/release.yml) on a macOS GitHub runner. The tag must match the Cargo package version. You can also dispatch the workflow with an existing tag.
+
+The workflow builds both Mac architectures and combines them with `lipo`. It fetches the latest released CLI binaries and verifies their published checksums before making a universal CLI. The release notes record the CLI version. `scripts/package-release.sh` packages the signed app with permissions and symlinks intact and runs `update-sign` to write `latest.json`.
+
+`UPDATE_SIGNING_KEY` is a GitHub Actions secret containing the base64 raw 32-byte Ed25519 seed. The signer checks that it matches `assets/update-public-key.txt`. The app embeds only that public key. `update-sign --test-key` accepts a throwaway seed for local packaging exercises; it does not change the app's trusted key. For development, `REOCLO_UPDATE_URL` overrides the manifest endpoint. HTTPS is required except on loopback.
+
+After building the local bundle, run `cargo build --bin update-sign` followed by `cargo run --example update-smoke`. This packages and signs the actual bundle with a generated test key, serves it over loopback, and uses `REOCLO_UPDATE_URL` in a child process to install it over a temporary older app. The test validates the installed bundle with `codesign` and never opens a live app. It prints `UPDATE INSTALL PASS` on success. `dist/latest.json` from this exercise is test-signed and must not be published.
+
+Copy [packaging/homebrew/reoclo-desktop.rb](packaging/homebrew/reoclo-desktop.rb) to `Casks/reoclo-desktop.rb` in `reoclo/homebrew-tap`. Copy [packaging/homebrew/update-desktop-cask.yml](packaging/homebrew/update-desktop-cask.yml) to that repository's `.github/workflows/`. The tap's own token refreshes the cask every 30 minutes. Run it manually after the first release to replace the bootstrap `:no_check` checksum with the published DMG hash. No deploy key is needed.
 
 ## Code map
 
@@ -159,7 +192,7 @@ The visual contract is in [DESIGN.md](DESIGN.md), and the product scope in [PROD
 
 ## Status
 
-Builds are signed ad hoc. Developer ID signing and notarization are not set up yet, which is why there is no download.
+Builds are signed ad hoc. GitHub Releases provides the downloads. Developer ID signing and notarization are not set up yet.
 
 ## License
 

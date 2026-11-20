@@ -1,10 +1,7 @@
+mod cli_section;
+pub(super) mod updates_section;
 use super::{State, primitives::*};
-use crate::{
-    cli::{self, Cli, MIN_VERSION},
-    model::MenuBarStyle,
-    system::SystemAction,
-    theme::*,
-};
+use crate::{model::MenuBarStyle, system::SystemAction, theme::*};
 use rune::{El, ScrollSpec, col, el, row, text};
 use rune_kit::{Button, Kit, Select, SelectAppearance, Switch, TextInput};
 use serde_json::json;
@@ -22,93 +19,6 @@ fn setting(label: &str, hint: Option<&str>, control: El, k: &Kit) -> El {
         copy = copy.child(text(hint).font(HINT).color(k.c.text_muted).wrap());
     }
     row().w_full().gap(XL).center_y().child(copy).child(control)
-}
-
-fn cli_section(s: &State, k: &Kit) -> El {
-    let (path, version) = match &s.cli {
-        Some(Cli::Ready {
-            path,
-            version,
-            bundled,
-        }) => (
-            if *bundled {
-                format!("{} (bundled with the app)", path.display())
-            } else {
-                path.display().to_string()
-            },
-            version.clone(),
-        ),
-        Some(Cli::TooOld { path, version }) => (path.display().to_string(), version.clone()),
-        Some(Cli::Missing) => ("Not found".into(), "None".into()),
-        None => ("Looking for the CLI".into(), "Unknown".into()),
-    };
-    let helper = match s.model.status.hosts.as_ref() {
-        Some(hosts) if hosts.installed => hosts
-            .version
-            .clone()
-            .unwrap_or_else(|| "Older than 0.103.1".into()),
-        _ => "Not installed".into(),
-    };
-    let mut section = col()
-        .w_full()
-        .gap(LG)
-        .child(text("Command-line tool").font(HEADING).color(k.c.text_base))
-        .child(
-            text("Reoclo runs the reoclo CLI installed on this Mac, so upgrading the CLI also updates the daemon. The copy bundled with the app is used only when none is installed.")
-                .font(HINT)
-                .color(k.c.text_muted)
-                .wrap(),
-        )
-        .child(field("Reoclo CLI", &path, k).key("cli-path"))
-        .child(
-            row()
-                .w_full()
-                .gap(XL)
-                .child(field("CLI version", &version, k).grow(1.0))
-                .child(field("Hosts helper", &helper, k).grow(1.0)),
-        );
-    if let Some(Cli::TooOld { path, .. }) = &s.cli {
-        let message = format!(
-            "This CLI is older than the app needs ({MIN_VERSION} or later). Run {} to update it.",
-            cli::upgrade_command(path)
-        );
-        section = section.child(alert(&message, k));
-    }
-    if s.daemon_behind() {
-        let hint = format!(
-            "The daemon runs {}. Restart it to use the CLI's version. Tunnels reconnect on their own.",
-            s.model.status.version
-        );
-        section = section.child(setting(
-            "Restart the daemon",
-            Some(&hint),
-            Button::new("Restart daemon")
-                .disabled(s.busy)
-                .on_press(|s: &mut State| s.run_system(SystemAction::RestartDaemon))
-                .secondary(k)
-                .key("restart-daemon"),
-            k,
-        ));
-    }
-    if let Some(helper) = s.helper_behind() {
-        let hint = format!(
-            "The hosts helper is {helper}. Updating reinstalls it from the CLI and asks for an administrator password."
-        );
-        section = section.child(setting(
-            "Update the hosts helper",
-            Some(&hint),
-            Button::new("Update helper")
-                .disabled(s.busy)
-                .on_press(|s: &mut State| {
-                    let setup = s.helper_setup(s.relay_enabled());
-                    s.run_system(SystemAction::SetupHosts(setup));
-                })
-                .secondary(k)
-                .key("update-helper"),
-            k,
-        ));
-    }
-    section
 }
 
 fn appearance_label(value: &str) -> &'static str {
@@ -157,18 +67,21 @@ pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
         .border(RULE, k.c.border_strong);
     let mut body = col()
         .w_full()
-        .padding(XL)
+        .max_w(CONTENT_MAX)
+        .padding(if s.compact { LG } else { XL })
         .gap(XL)
         .child(title("Settings", None, k));
     if let Some(error) = s.error.as_ref().filter(|_| s.modal.is_none()) {
         body = body.child(alert(error, k));
     }
     body = body
+        .child(updates_section::view(s, k))
+        .child(el().h(RULE).w_full().fill(k.c.border_base))
         .child(
             col()
                 .w_full()
                 .gap(LG)
-                .child(text("Desktop app").font(HEADING).color(k.c.text_base))
+                .child(text("Desktop app").role("heading").font(HEADING).color(k.c.text_base))
                 .child(setting(
                     "Start Reoclo at login",
                     Some("Applies at your next sign-in to macOS."),
@@ -185,7 +98,7 @@ pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
                 ))
                 .child(setting(
                     "Get started",
-                    Some("Check the background service, sign-in and secure web addresses again."),
+                    Some("Repeat setup for this Mac."),
                     Button::new("Run setup again")
                         .on_press(|s: &mut State| s.begin_setup())
                         .secondary(k)
@@ -195,7 +108,7 @@ pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
                 .child(setting("Appearance", None, appearance, k))
                 .child(setting(
                     "Menu bar",
-                    Some("The meter shows one bar per tunnel, solid when it is active."),
+                    Some("The meter shows solid active bars and short failure stubs."),
                     menu_bar,
                     k,
                 )),
@@ -205,7 +118,7 @@ pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
             col()
                 .w_full()
                 .gap(LG)
-                .child(text("Tunnel daemon").font(HEADING).color(k.c.text_base))
+                .child(text("Tunnel daemon").role("heading").font(HEADING).color(k.c.text_base))
                 .child(setting(
                     "Idle timeout (seconds)",
                     Some("Close idle sessions; keep local listeners ready."),
@@ -277,7 +190,7 @@ pub fn view(s: &State, k: &Kit, layer: &mut Vec<El>) -> El {
                 ),
         )
         .child(el().h(RULE).w_full().fill(k.c.border_base))
-        .child(cli_section(s, k));
+        .child(cli_section::view(s, k));
     k.scroll_bar(
         col()
             .key("settings-scroll")

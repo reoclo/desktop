@@ -11,6 +11,10 @@ impl State {
             bundled: false,
         };
         let mut s = Self {
+            clock_epoch: time::OffsetDateTime::from_unix_timestamp(1794211560)
+                .unwrap_or(time::OffsetDateTime::UNIX_EPOCH),
+            socket_path: "/Users/example/.config/reoclo/tunnels/run/tunneld.sock".into(),
+            ca_path: Some("/Users/example/.config/reoclo/tunnels/ca/rootCA.pem".into()),
             cli: Some(cli),
             model: Model {
                 status: f.status,
@@ -36,6 +40,26 @@ impl State {
             _ => Page::Tunnels,
         };
         s.panel = page == "panel";
+        s.updates = crate::update::Status {
+            automatic: true,
+            last_checked: Some("2026-11-20 04:00 UTC".into()),
+            phase: match case {
+                "update-available" => crate::update::Phase::Available {
+                    version: "0.6.0".into(),
+                },
+                "update-ready" => crate::update::Phase::Ready {
+                    version: "0.6.0".into(),
+                    notes: "More reliable tunnel recovery. Improved keyboard navigation.".into(),
+                },
+                "update-error" => crate::update::Phase::Failed(
+                    "The update signature is invalid. The download was discarded.".into(),
+                ),
+                "update-disabled" => crate::update::Phase::Disabled(
+                    "Move Reoclo out of the disk image to a writable Applications folder.".into(),
+                ),
+                _ => crate::update::Phase::Idle,
+            },
+        };
         if page == "add" {
             s.modal = Some("add".into());
             s.name = TextEdit::new("api");
@@ -122,6 +146,49 @@ impl State {
             s.error = Some(
                 "The daemon rejected the request. Check the local daemon log and retry.".into(),
             );
+        }
+        if case == "events" {
+            s.model.recent_logs = [
+                "grafana: listener ready on port 8443",
+                "pool background-worker: active",
+                "grafana: upstream connection refused",
+                "grafana-backup: listener stopped",
+            ]
+            .into_iter()
+            .map(|line| crate::reducer::LogEntry {
+                received: s.clock_epoch,
+                line: line.into(),
+            })
+            .collect();
+        }
+        if case == "shared-failure" || case == "long-names" {
+            for tunnel in &mut s.model.tunnels {
+                tunnel.server = "agent-worker-prod-01".into();
+            }
+            let mut local = s.model.tunnels[0].clone();
+            local.name = "workspace-console".into();
+            local.kind = "local".into();
+            local.server.clear();
+            local.server_id.clear();
+            local.url = Some("https://console.example.test".into());
+            local.local_target = Some("127.0.0.1:43080".into());
+            s.model.tunnels.push(local);
+        }
+        if case == "shared-failure" {
+            for tunnel in &mut s.model.tunnels {
+                if tunnel.name != "redis" {
+                    if tunnel.kind == "tcp" {
+                        tunnel.kind = "https".into();
+                        tunnel.url = Some(format!("https://{}.example.test:8443", tunnel.name));
+                    }
+                    tunnel.state = TunnelState::Failed;
+                    tunnel.message = "The tunnel failed.".into();
+                    tunnel.enabled = true;
+                    tunnel.detail = Some("port 8443 is already in use, so HTTPS tunnels cannot listen; free it or set https_port in tunnels.yaml and restart the daemon".into());
+                    tunnel.action = "See the detail".into();
+                    tunnel.traffic = Default::default();
+                }
+            }
         }
         if case == "device-code" {
             s.model.auth = AuthEvent {

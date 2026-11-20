@@ -1,33 +1,49 @@
-use super::{State, primitives::*};
-use crate::{
-    cli::{self, Cli, MIN_VERSION},
-    control::segment,
-    system::SystemAction,
-    theme::*,
-};
+mod actions;
+use super::{State, modal::Dialog, primitives::*};
+use crate::{control::segment, system::SystemAction, theme::*};
 use rune::{El, col, row, text};
-use rune_kit::{Button, Dialog, Kit};
+use rune_kit::{Button, Kit};
 
 pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
     let Some(modal) = s.modal.as_deref() else {
         return;
     };
     let link_text = s.link_description();
+    let remove_title = s
+        .selected()
+        .map(|t| format!("Remove {}?", t.name))
+        .unwrap_or_else(|| "Remove tunnel?".into());
+    let remove_body = s.selected().map(|t| match t.hostname.as_deref() {
+        Some(host) => format!("The tunnel closes, and its saved configuration and the hostname {host} are removed."),
+        None => "The tunnel closes and its saved configuration is removed.".into(),
+    }).unwrap_or_default();
+    let stop_title = s
+        .model
+        .foreground
+        .iter()
+        .find(|t| Some(&t.id) == s.stop_target.as_ref())
+        .map(|t| format!("Stop {}?", t.server))
+        .unwrap_or_else(|| "Stop this tunnel?".into());
     let (title, description, action, destructive) = match modal {
         "open-link" => (
             "Open this link?",
-            link_text.as_deref().unwrap_or_default(),
+            match s.link.as_ref().map(|p| p.link.kind) {
+                Some(crate::link::LinkKind::Tcp) => {
+                    "This link opens a tunnel and copies its local address."
+                }
+                _ => "This link opens a tunnel and then its address in your browser.",
+            },
             "Continue",
             false,
         ),
         "remove" => (
-            "Remove tunnel?",
-            "This closes the tunnel and removes its saved configuration and hostname.",
+            remove_title.as_str(),
+            remove_body.as_str(),
             "Remove tunnel",
             true,
         ),
         "stop-terminal" => (
-            "Stop this tunnel?",
+            stop_title.as_str(),
             "The reoclo process running in your terminal exits and its ports close.",
             "Stop tunnel",
             true,
@@ -88,6 +104,36 @@ pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
         .gap(LG)
         .padding(LG)
         .child(text(description).font(BODY).color(k.c.text_muted).wrap());
+    if modal == "open-link"
+        && let Some(pending) = &s.link
+    {
+        let link = &pending.link;
+        body = body
+            .description(link_text.unwrap_or_default())
+            .child(
+                col()
+                    .equal_columns(2)
+                    .gap(LG)
+                    .w_full()
+                    .child(field("Organization", &link.org, k))
+                    .child(field("Server", &link.server, k))
+                    .child(field("Target", &link.target(), k))
+                    .child(field(
+                        "Opens as",
+                        match link.kind {
+                            crate::link::LinkKind::Https => "HTTPS",
+                            crate::link::LinkKind::Tcp => "Local TCP port",
+                        },
+                        k,
+                    )),
+            )
+            .child(
+                text("Only continue if you trust where the link came from.")
+                    .font(BODY)
+                    .color(k.c.text_muted)
+                    .wrap(),
+            );
+    }
     if let Some(error) = &s.error {
         body = body.child(alert(error, k));
     }
@@ -164,91 +210,8 @@ pub fn confirmations(s: &State, k: &Kit, layer: &mut Vec<El>) {
             ),
     );
     Dialog::new("confirmation", title)
-        .open(true)
-        .fit()
         .width(if s.panel { 308.0 } else { 480.0 })
-        .click_outside(false)
         .on_close(|s: &mut State| s.cancel_confirmation())
         .child(body)
         .build(k, layer);
-}
-
-impl State {
-    pub fn confirm_discard(&mut self) {
-        self.return_modal = self.modal.take();
-        self.modal = Some("discard".into());
-        self.open_select = None;
-        self.close_pickers();
-    }
-
-    pub fn cancel_confirmation(&mut self) {
-        if self.modal.as_deref() == Some("open-link") {
-            self.link = None;
-        }
-        self.modal = if self.modal.as_deref() == Some("discard") {
-            self.return_modal.take()
-        } else {
-            None
-        };
-    }
-
-    pub fn begin_add(&mut self) {
-        self.close_pickers();
-        self.selected_port = None;
-        self.modal = Some("add".into());
-        self.name = rune::TextEdit::new("");
-        self.hostname = rune::TextEdit::new("");
-        self.domain.clear();
-        self.error = None;
-        if !self.org.is_empty() && self.servers.is_empty() {
-            self.request(
-                "GET",
-                &format!("/v1/orgs/{}/servers", segment(&self.org)),
-                None,
-            );
-        }
-    }
-
-    pub fn run_system(&mut self, action: SystemAction) {
-        if self.busy {
-            return;
-        }
-        let Some(sender) = self.system_runner.clone() else {
-            self.notice = Some("Fixture preview. No system changes were made.".into());
-            self.modal = None;
-            return;
-        };
-        let cli = match (&action, &self.cli) {
-            (SystemAction::StartAtLogin(_), _) => None,
-            (_, Some(Cli::Ready { path, .. })) => Some(path.clone()),
-            (_, found) => {
-                self.error = Some(cli_problem(found.as_ref()));
-                self.system_failed(&action);
-                return;
-            }
-        };
-        match sender.send((action, cli)) {
-            Ok(()) => {
-                self.busy = true;
-                self.error = None;
-            }
-            Err(error) => self.error = Some(format!("System action could not start: {error}")),
-        }
-    }
-}
-
-/// Why a system action cannot run without a usable CLI.
-fn cli_problem(found: Option<&Cli>) -> String {
-    match found {
-        Some(Cli::TooOld { path, version }) => format!(
-            "The reoclo CLI at {} is {version}, and this app needs {MIN_VERSION} or later. Run {} and try again.",
-            path.display(),
-            cli::upgrade_command(path)
-        ),
-        Some(Cli::Missing) => {
-            "No reoclo CLI was found. Install it with brew install reoclo/tap/reoclo and try again."
-                .into()
-        }
-        _ => "Reoclo is still looking for the reoclo CLI. Try again in a moment.".into(),
-    }
 }

@@ -10,3 +10,4 @@ pub mod system;
 pub mod theme;
 pub mod tray;
 pub mod ui;
+pub mod update;

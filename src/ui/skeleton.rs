@@ -22,6 +22,7 @@ pub fn view(s: &State, k: &Kit) -> El {
             .gap(LG)
             .child(
                 text("Loading tunnel data")
+                    .role("heading")
                     .font(HEADING)
                     .color(k.c.text_base),
             );
@@ -35,28 +36,53 @@ pub fn view(s: &State, k: &Kit) -> El {
         .role("status")
         .label(format!("Loading {}", s.page.name()))
         .w_full()
-        .padding(XL)
-        .gap(XL)
-        .child(title(s.page.name(), None, k));
-    let layout = match s.page {
-        Page::Tunnels => col()
-            .gap(XL)
+        .max_w(CONTENT_MAX)
+        .padding(if s.compact { LG } else { XL })
+        .gap(if s.page == Page::Tunnels { LG } else { XL });
+    body = body.child(if s.page == Page::Tunnels {
+        row()
+            .w_full()
+            .center_y()
+            .gap(LG)
             .child(
                 col()
+                    .grow(1.0)
                     .gap(XS)
-                    .child(bar(k, 28.0))
+                    .child(title("Tunnels", None, k))
+                    .child(bar(k, 20.0).w(160.0)),
+            )
+            .child(bar(k, 28.0).w(96.0))
+    } else {
+        title(s.page.name(), None, k)
+    });
+    let mut detail_heading = col().gap(XS).child(bar(k, XL));
+    if s.selected().and_then(|tunnel| tunnel.subtitle()).is_some() {
+        detail_heading = detail_heading.child(bar(k, LG).w(160.0));
+    }
+    let layout = match s.page {
+        Page::Tunnels => col()
+            .gap(LG)
+            .child(
+                col()
+                    .gap(0.0)
                     .child(bar(k, 32.0))
-                    .child(bar(k, 32.0))
-                    .child(bar(k, 32.0)),
+                    .child(bar(k, CONTROL))
+                    .child(bar(k, CONTROL))
+                    .child(bar(k, CONTROL)),
             )
             .child(bar(k, RULE))
-            .child(bar(k, XL))
+            .child(detail_heading)
             .child(bar(k, CONTROL))
             .child(
-                row()
-                    .gap(XL)
-                    .child(bar(k, CONTROL).grow(1.0))
-                    .child(bar(k, CONTROL).grow(1.0)),
+                col()
+                    .equal_columns(if s.compact { 2 } else { 4 })
+                    .w_full()
+                    .max_w(FACT_WIDTH * 4.0 + LG * 3.0)
+                    .gap(LG)
+                    .child(bar(k, CONTROL))
+                    .child(bar(k, CONTROL))
+                    .child(bar(k, CONTROL))
+                    .child(bar(k, CONTROL)),
             )
             .child(bar(k, CONTROL)),
         Page::Hosts => col()
@@ -80,10 +106,14 @@ pub fn view(s: &State, k: &Kit) -> El {
                     .child(bar(k, CONTROL).grow(1.0)),
             )
             .child(bar(k, CONTROL))
+            .child(bar(k, CONTROL))
             .child(bar(k, CONTROL)),
         Page::Settings => col()
             .gap(XL)
+            .child(super::settings::updates_section::view(s, k))
+            .child(bar(k, RULE))
             .child(bar(k, XL))
+            .child(bar(k, CONTROL))
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL))
@@ -93,10 +123,12 @@ pub fn view(s: &State, k: &Kit) -> El {
             .child(bar(k, CONTROL))
             .child(bar(k, CONTROL)),
     };
-    body = body.child(layout).child(
-        text("Reading the local daemon.")
-            .font(LABEL)
-            .color(k.c.text_muted),
-    );
+    body = body
+        .child(layout.pr(if s.page == Page::Tunnels { LG } else { 0.0 }))
+        .child(
+            text("Reading the local daemon.")
+                .font(LABEL)
+                .color(k.c.text_muted),
+        );
     body
 }
