@@ -51,7 +51,7 @@ jobs:
           mkdir -p dist
           lipo -create target/aarch64-apple-darwin/release/reoclo-desktop \
             target/x86_64-apple-darwin/release/reoclo-desktop -output dist/reoclo-desktop-universal
-          lipo -verify_arch arm64 x86_64 dist/reoclo-desktop-universal
+          lipo dist/reoclo-desktop-universal -verify_arch arm64 x86_64
           cargo build --locked --release --bin update-sign
       - name: Fetch and verify released CLI
         shell: bash
@@ -67,7 +67,7 @@ jobs:
           shasum -a 256 -c selected-checksums
           chmod +x reoclo-darwin-arm64 reoclo-darwin-x64
           lipo -create reoclo-darwin-arm64 reoclo-darwin-x64 -output ../reoclo-universal
-          lipo -verify_arch arm64 x86_64 ../reoclo-universal
+          lipo ../reoclo-universal -verify_arch arm64 x86_64
           echo "CLI_VERSION=$cli_tag" >> "$GITHUB_ENV"
       - name: Bundle and sign update archive
         shell: bash
