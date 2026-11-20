@@ -2,7 +2,7 @@ use crate::{theme::*, ui::State};
 use rune::{El, Tx, col, text};
 use rune_kit::{Combobox, ComboboxOption, ComboboxState, Kit, Select, SelectAppearance};
 
-pub(super) struct Picker<'a> {
+pub(in crate::ui) struct Picker<'a> {
     pub key: &'a str,
     pub label: &'a str,
     pub placeholder: &'a str,
@@ -10,9 +10,11 @@ pub(super) struct Picker<'a> {
     pub options: &'a [ComboboxOption],
     pub current: Option<&'a str>,
     pub disabled: bool,
+    /// The trigger's width. Form fields use one column.
+    pub width: f32,
 }
 
-pub(super) fn options(values: impl IntoIterator<Item = String>) -> Vec<ComboboxOption> {
+pub(in crate::ui) fn options(values: impl IntoIterator<Item = String>) -> Vec<ComboboxOption> {
     values
         .into_iter()
         .map(|value| ComboboxOption::new(value.clone(), value))
@@ -20,7 +22,7 @@ pub(super) fn options(values: impl IntoIterator<Item = String>) -> Vec<ComboboxO
 }
 
 /// A dropdown that can be searched, drawn like the text inputs beside it.
-pub(super) fn picker(
+pub(in crate::ui) fn picker(
     p: Picker<'_>,
     state: &ComboboxState,
     access: fn(&mut State) -> &mut ComboboxState,
@@ -36,7 +38,7 @@ pub(super) fn picker(
     let trigger = Select::new::<&str>(format!("{}-value", p.key), &[])
         .label(p.label)
         .appearance(SelectAppearance::Field)
-        .width(FORM_COLUMN)
+        .width(p.width)
         .current(shown)
         .placeholder(p.placeholder)
         .disabled(p.disabled)
@@ -46,7 +48,7 @@ pub(super) fn picker(
     Combobox::new(p.key, state, p.options, access)
         .label(p.label)
         .current(p.current)
-        .width(FORM_COLUMN)
+        .width(p.width)
         .trigger(trigger)
         .placeholder(p.placeholder)
         .search_placeholder(p.search)

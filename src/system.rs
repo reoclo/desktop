@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+pub mod command_path;
 pub mod worker;
 
 /// How the hosts helper is installed: the port 443 relay and the suffixes beyond .localhost.
@@ -15,9 +16,21 @@ pub enum SystemAction {
     InstallDaemon,
     /// Stop the daemon and start it again on the CLI the app found, under launchd when the service is installed.
     RestartDaemon,
+    /// `__hostsd-install` copies the CLI to the root-owned `/Library/PrivilegedHelperTools/com.reoclo.hostsd`,
+    /// so the helper never points into the app bundle. Moving or updating the app cannot break it; it only
+    /// keeps running the copied version until `helper_behind` offers this reinstall.
     SetupHosts(HelperSetup),
     StartAtLogin(bool),
     ShowLog(PathBuf),
+    /// `<program> mcp agents -o json`: which coding agents are on this Mac. Runs the app's own copy.
+    ListAgents {
+        program: PathBuf,
+    },
+    /// `<program> mcp install --agent all --command <command>`: registers Reoclo's MCP server with them.
+    ConnectAgents {
+        program: PathBuf,
+        command: PathBuf,
+    },
 }
 
 pub trait SystemRunner: Send + 'static {
@@ -81,6 +94,22 @@ pub fn admin_error(stderr: &str) -> String {
     }
 }
 
+/// `mcp install` exits with an error after printing its results when one agent failed, so the
+/// answer is whatever it printed, and the error output only when it printed nothing.
+fn json_answer(output: std::io::Result<std::process::Output>) -> Result<String, String> {
+    let output = output.map_err(|e| e.to_string())?;
+    let printed = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if !printed.is_empty() {
+        return Ok(printed);
+    }
+    let error = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    Err(if error.is_empty() {
+        "The reoclo command did not answer.".into()
+    } else {
+        error
+    })
+}
+
 fn current_uid() -> Result<u32, String> {
     let output = Command::new("/usr/bin/id")
         .arg("-u")
@@ -102,6 +131,22 @@ impl SystemRunner for MacRunner {
             SystemAction::InstallDaemon => Command::new(cli()?)
                 .args(["tunnel", "daemon", "install"])
                 .output(),
+            SystemAction::ListAgents { program } => {
+                return json_answer(
+                    Command::new(program)
+                        .args(["mcp", "agents", "-o", "json"])
+                        .output(),
+                );
+            }
+            SystemAction::ConnectAgents { program, command } => {
+                return json_answer(
+                    Command::new(program)
+                        .args(["mcp", "install", "--agent", "all", "--command"])
+                        .arg(command)
+                        .args(["-o", "json"])
+                        .output(),
+                );
+            }
             SystemAction::RestartDaemon => {
                 let stop = Command::new(cli()?)
                     .args(["tunnel", "daemon", "stop"])
@@ -167,12 +212,27 @@ impl SystemRunner for MacRunner {
     }
 }
 
+const DEMO_AGENTS: &str = r#"{"agents":[{"id":"claude-code","name":"Claude Code","installed":true,"config_path":"~/.claude.json","registered":false,"command":null,"error":null},{"id":"codex","name":"Codex","installed":true,"config_path":"~/.codex/config.toml","registered":false,"command":null,"error":null}]}"#;
+
+fn demo_connected(command: &Path) -> String {
+    let change = |id: &str, name: &str, path: &str| serde_json::json!({"agent": id, "name": name, "action": "installed", "config_path": path, "backup_path": null, "command": command, "error": null});
+    serde_json::json!({"results": [
+        change("claude-code", "Claude Code", "~/.claude.json"),
+        change("codex", "Codex", "~/.codex/config.toml"),
+    ]})
+    .to_string()
+}
+
 #[derive(Default)]
 pub struct FakeRunner;
 impl SystemRunner for FakeRunner {
     fn run(&self, action: &SystemAction, _cli: Option<&Path>) -> Result<String, String> {
-        Ok(format!(
-            "Development runner completed {action:?}; no system changes."
-        ))
+        match action {
+            SystemAction::ListAgents { .. } => Ok(DEMO_AGENTS.into()),
+            SystemAction::ConnectAgents { command, .. } => Ok(demo_connected(command)),
+            _ => Ok(format!(
+                "Development runner completed {action:?}; no system changes."
+            )),
+        }
     }
 }

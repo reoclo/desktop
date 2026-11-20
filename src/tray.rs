@@ -215,7 +215,7 @@ impl State {
                 .filter(|t| is_active(t.state))
                 .count();
         let total = self.model.tunnels.len() + self.model.foreground.len();
-        let pending = self.model.approvals.len();
+        let pending = self.pending_approvals().count();
         let failed = self
             .model
             .tunnels

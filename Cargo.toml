@@ -1,6 +1,6 @@
 [package]
 name = "reoclo-desktop"
-version = "0.6.0"
+version = "0.8.0"
 edition = "2024"
 license = "MIT"
 description = "Reoclo for macOS: your Reoclo tunnels and local HTTPS in the menu bar"

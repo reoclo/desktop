@@ -48,7 +48,13 @@ impl State {
             return;
         };
         let cli = match (&action, &self.cli) {
-            (SystemAction::StartAtLogin(_) | SystemAction::ShowLog(_), _) => None,
+            (
+                SystemAction::StartAtLogin(_)
+                | SystemAction::ShowLog(_)
+                | SystemAction::ListAgents { .. }
+                | SystemAction::ConnectAgents { .. },
+                _,
+            ) => None,
             (_, Some(Cli::Ready { path, .. })) => Some(path.clone()),
             (_, found) => {
                 self.error = Some(cli_problem(found.as_ref()));
@@ -62,6 +68,40 @@ impl State {
                 self.error = None;
             }
             Err(error) => self.error = Some(format!("System action could not start: {error}")),
+        }
+    }
+}
+
+impl State {
+    /// A system action finished on the worker thread.
+    pub fn system_finished(&mut self, action: &SystemAction, result: Result<String, String>) {
+        self.busy = false;
+        if self.agents_finished(action, &result) {
+            return;
+        }
+        match result {
+            Ok(message) => {
+                self.modal = None;
+                if let SystemAction::StartAtLogin(enabled) = action {
+                    self.start_at_login = *enabled;
+                }
+                if *action == SystemAction::InstallDaemon {
+                    self.service_installed_ok();
+                    self.service_install_finished();
+                }
+                if matches!(action, SystemAction::SetupHosts(_)) {
+                    // The helper's own answer decides what the app reports.
+                    self.request("POST", "/v1/hosts/sync", None);
+                    self.awaiting_helper = true;
+                } else {
+                    self.request("GET", "/v1/status", None);
+                    self.notice = Some(message);
+                }
+            }
+            Err(message) => {
+                self.error = Some(message);
+                self.system_failed(action);
+            }
         }
     }
 }

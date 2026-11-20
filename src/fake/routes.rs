@@ -11,12 +11,31 @@ fn event(name: &str, body: &Value) -> Option<String> {
 fn fail(code: u16, message: &str) -> Reply {
     (
         code,
-        json!({"error":{"code":if code == 404 {"not_found"} else {"invalid"},"message":message}}),
+        json!({"error":{"code":match code {
+            404 => "not_found",
+            409 => "conflict",
+            _ => "invalid",
+        },"message":message}}),
         None,
     )
 }
 
+/// As the daemon does, a request past its expiry leaves the pending list and can no longer be decided.
+fn expire_approvals(f: &mut Fixture) {
+    let now = time::OffsetDateTime::now_utc();
+    let (pending, expired): (Vec<_>, Vec<_>) = std::mem::take(&mut f.approvals)
+        .into_iter()
+        .partition(|a| a.expires_at.is_none_or(|expiry| expiry > now));
+    f.approvals = pending;
+    f.approval_history
+        .extend(expired.into_iter().map(|mut approval| {
+            approval.status = "expired".into();
+            approval
+        }));
+}
+
 pub(super) fn route(f: &mut Fixture, method: &str, path: &str, input: Value) -> Reply {
+    expire_approvals(f);
     match (method, path) {
         ("GET", "/v1/status") => return (200, json!(f.status), None),
         ("GET", "/v1/hosts") => {
@@ -144,7 +163,10 @@ pub(super) fn route(f: &mut Fixture, method: &str, path: &str, input: Value) -> 
             return fail(404, path);
         }
         let Some(index) = f.approvals.iter().position(|a| a.id == id) else {
-            return fail(404, "Approval not found");
+            return match f.approval_history.iter().find(|a| a.id == id) {
+                Some(decided) => fail(409, &format!("approval {id} is already {}", decided.status)),
+                None => fail(404, "Approval not found"),
+            };
         };
         let mut approval = f.approvals.remove(index);
         approval.status = if parts.get(3) == Some(&"deny") {

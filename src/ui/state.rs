@@ -51,6 +51,16 @@ pub enum ViewState {
     Error,
 }
 
+/// Where the scan of the chosen server's listening ports stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum PortsScan {
+    #[default]
+    Idle,
+    Scanning,
+    Loaded,
+    Failed(String),
+}
+
 pub struct State {
     pub logs: super::logs::LogView,
     pub model: Model,
@@ -66,6 +76,8 @@ pub struct State {
     pub compact: bool,
     pub viewport_width: f32,
     pub graph_width: f32,
+    /// The Tunnels page's scrolling height, and the height of what sits above its table.
+    pub tunnels_space: [f32; 2],
     pub clock_epoch: time::OffsetDateTime,
     pub clock_seconds: Option<f64>,
     pub socket_path: std::path::PathBuf,
@@ -85,11 +97,14 @@ pub struct State {
     pub pending_server: Option<String>,
     /// The helper install finished; the next status decides what the app reports.
     pub awaiting_helper: bool,
+    /// The reply to a CA trust request was lost; the next status says whether the CA got trusted anyway.
+    pub trust_check: Option<(super::Request, String)>,
     /// The notice on screen and the clock time it goes away.
     pub notice_shown: Option<(String, f64)>,
     pub orgs: Vec<Org>,
     pub servers: Vec<Server>,
     pub ports: Vec<Port>,
+    pub ports_scan: PortsScan,
     pub org: String,
     pub server: String,
     pub kind: String,
@@ -141,6 +156,17 @@ pub struct State {
     pub securing: bool,
     /// A `reoclo://open` link waiting for a confirmation or for the daemon.
     pub link: Option<PendingLink>,
+    /// The first-run screens replace the whole window until Done. `first_run_step` says which one.
+    pub first_run: bool,
+    /// Sign-in and setup progress for the first-run screens.
+    pub flow: super::setup_flow::Flow,
+    /// What the agent command install last reported. None until it has run.
+    pub command: Option<crate::system::command_path::CommandState>,
+    /// Where the app links its CLI from. None outside an app bundle.
+    pub command_paths: Option<crate::system::command_path::CommandPaths>,
+    /// Connect your agents: the coding agents on this Mac and what registering Reoclo did.
+    pub agents: super::AgentsStep,
+    pub command_worker: Option<Sender<crate::system::worker::CommandRequest>>,
     /// Things a reply decided to do that need the window, such as opening the browser.
     pub effects: Vec<Effect>,
     pub updates: crate::update::Status,
@@ -166,6 +192,7 @@ impl Default for State {
             compact: false,
             viewport_width: 1100.0,
             graph_width: 800.0,
+            tunnels_space: [0.0; 2],
             clock_epoch: time::OffsetDateTime::now_utc(),
             clock_seconds: None,
             socket_path: Default::default(),
@@ -181,10 +208,12 @@ impl Default for State {
             reissuing: false,
             pending_server: None,
             awaiting_helper: false,
+            trust_check: None,
             notice_shown: None,
             orgs: Vec::new(),
             servers: Vec::new(),
             ports: Vec::new(),
+            ports_scan: PortsScan::Idle,
             org: String::new(),
             server: String::new(),
             kind: "https".into(),
@@ -226,6 +255,12 @@ impl Default for State {
             service_installed: false,
             securing: false,
             link: None,
+            first_run: false,
+            flow: Default::default(),
+            command: None,
+            command_paths: None,
+            agents: Default::default(),
+            command_worker: None,
             effects: Vec::new(),
             updates: crate::update::Status::default(),
             updater: None,

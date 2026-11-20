@@ -83,6 +83,11 @@ pub fn spacer() -> El {
     el().grow(1.0)
 }
 
+/// A one-point horizontal rule between two regions.
+pub fn rule(k: &Kit) -> El {
+    el().h(RULE).w_full().fill(k.c.border_base)
+}
+
 pub fn title(name: &str, detail: Option<&str>, k: &Kit) -> El {
     let mut head = col()
         .gap(XS)
@@ -170,7 +175,20 @@ pub fn indicator(tone: Tone, label: &str, k: &Kit) -> El {
 }
 
 pub fn status(state: TunnelState, k: &Kit) -> El {
-    let tone = match state {
+    indicator(state_tone(state), state.label(), k)
+}
+
+/// A state's mark alone, for one-line rows. Its label is the accessible name and the tooltip.
+pub fn state_mark(state: TunnelState, k: &Kit) -> El {
+    row()
+        .role("img")
+        .label(state.label())
+        .help(state.label())
+        .child(mark(state_tone(state), k))
+}
+
+fn state_tone(state: TunnelState) -> Tone {
+    match state {
         TunnelState::Active => Tone::Success,
         TunnelState::Connecting | TunnelState::Reconnecting => Tone::Info,
         TunnelState::NeedsSignIn | TunnelState::QuotaReached | TunnelState::ServerOffline => {
@@ -182,8 +200,7 @@ pub fn status(state: TunnelState, k: &Kit) -> El {
         | TunnelState::ClosedByOperator => Tone::Danger,
         TunnelState::Ready => Tone::Ready,
         TunnelState::Down | TunnelState::Unknown => Tone::Inactive,
-    };
-    indicator(tone, state.label(), k)
+    }
 }
 
 /// A failure the person should read, placed where it cannot be scrolled past.
@@ -206,4 +223,3 @@ pub fn alert(message: &str, k: &Kit) -> El {
 
 pub use super::approvals::approvals;
 pub use super::data_state::{data_state, device_code};
-pub use super::terminal_tunnels::terminal_tunnels;

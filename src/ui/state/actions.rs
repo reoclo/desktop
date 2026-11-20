@@ -1,6 +1,7 @@
-use super::{Page, Request, State, ViewState};
+use super::{Page, PortsScan, Request, State, ViewState};
 use crate::{
     cli::{self, Cli},
+    control::segment,
     model::*,
 };
 use rune::TextEdit;
@@ -24,6 +25,21 @@ fn write_preferences(path: &std::path::Path, saved: &Preferences) -> std::io::Re
 const NOTICE_SECONDS: f64 = 6.0;
 
 impl State {
+    /// A launch with the choices saved on this Mac. Until Done is pressed once, it opens on first run.
+    pub fn launch(preferences: &Preferences) -> Self {
+        Self {
+            menu_bar: preferences.menu_bar,
+            relay_choice: preferences.relay,
+            onboarded: preferences.onboarded,
+            first_run: !preferences.onboarded,
+            updates: crate::update::Status {
+                automatic: preferences.automatic_updates,
+                ..Default::default()
+            },
+            ..Self::default()
+        }
+    }
+
     /// Runs before every frame. Returns true when a notice went away and the view must redraw.
     pub fn expire_notice(&mut self, clock: f64, tx: &mut rune::Tx) -> bool {
         let Some(notice) = self.notice.clone() else {
@@ -70,12 +86,26 @@ impl State {
         self.server.clear();
         self.servers.clear();
         self.ports.clear();
+        self.ports_scan = PortsScan::Idle;
         self.begin_add();
         self.kind = "https".into();
         self.via = "reoclo".into();
         self.name = TextEdit::new(name);
         self.target = TextEdit::new(target);
         self.pending_server = Some(server.to_owned());
+    }
+
+    /// Asks the daemon to scan the chosen server's listening ports.
+    pub fn scan_ports(&mut self) {
+        self.ports.clear();
+        self.selected_port = None;
+        self.ports_scan = PortsScan::Scanning;
+        let path = format!(
+            "/v1/orgs/{}/servers/{}/ports",
+            segment(&self.org),
+            segment(&self.server)
+        );
+        self.request("GET", &path, None);
     }
 
     /// Search for the CLI when the daemon reports a different executable, or always when `force`.

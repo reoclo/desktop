@@ -152,9 +152,13 @@ impl State {
         }
         let notice = self.expire_notice(clock, tx);
         let link = self.expire_link(clock, tx);
+        let daemon = self.expire_daemon_wait(clock, tx);
+        let agents = self.first_run_tick();
         let effects = self.flush_effects(tx);
         notice
             || link
+            || daemon
+            || agents
             || effects
             || (clock_changed && (watching || !self.model.approvals.is_empty()))
     }

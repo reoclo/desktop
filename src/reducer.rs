@@ -4,7 +4,7 @@ use crate::model::{
     TunnelView,
 };
 use serde::Deserialize;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 
 #[derive(Clone, Debug, Default)]
 pub struct Model {
@@ -173,16 +173,5 @@ impl Model {
         }) {
             self.selected = None;
         }
-    }
-
-    pub fn groups(&self) -> BTreeMap<(&str, &str), Vec<&TunnelView>> {
-        let mut groups = BTreeMap::new();
-        for tunnel in &self.tunnels {
-            groups
-                .entry((tunnel.org.as_str(), tunnel.server.as_str()))
-                .or_insert_with(Vec::new)
-                .push(tunnel);
-        }
-        groups
     }
 }

@@ -1,33 +1,24 @@
-mod view;
-use super::modal::Dialog;
-use super::{State, ViewState, links::LinkStep, primitives::*};
-use crate::{model::Ca, system::SystemAction, theme::*};
-use rune::{El, ScrollSpec, col, el, row, text};
-use rune_kit::{Button, Kit};
-pub use view::sheet;
-
-/// Where one Get started step stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SetupStatus {
-    Done,
-    Needed,
-    Optional,
-    /// The step cannot run until the background service does.
-    Waiting,
-    Checking,
-}
+use super::{State, ViewState, links::LinkStep};
+use crate::{model::Ca, system::SystemAction};
 
 impl State {
+    /// Opens the first-run screens on a fresh flow, as Run setup again does.
     pub fn begin_setup(&mut self) {
         self.refresh_service();
         self.request("GET", "/v1/status", None);
-        self.modal = Some("get-started".into());
+        self.reset_flow();
+        self.first_run = true;
+        self.modal = None;
     }
 
+    /// Done on the last screen: the setup is finished once, and a link that waited for it opens now.
     pub fn finish_setup(&mut self) {
         self.onboarded = true;
-        self.modal = None;
+        self.first_run = false;
         self.save_preferences();
+        if self.link_step() == Some(LinkStep::Confirm) {
+            self.confirm_link();
+        }
     }
 
     pub fn refresh_service(&mut self) {
@@ -58,38 +49,6 @@ impl State {
         self.ca_ready() && self.helper_installed()
     }
 
-    pub fn setup_status(&self) -> [SetupStatus; 3] {
-        let blocked = if self.phase == ViewState::Loading {
-            SetupStatus::Checking
-        } else {
-            SetupStatus::Waiting
-        };
-        let running = self.daemon_running();
-        [
-            if self.phase == ViewState::Loading {
-                SetupStatus::Checking
-            } else if running && self.service_installed {
-                SetupStatus::Done
-            } else {
-                SetupStatus::Needed
-            },
-            if !running {
-                blocked
-            } else if self.signed_in() {
-                SetupStatus::Done
-            } else {
-                SetupStatus::Needed
-            },
-            if !running {
-                blocked
-            } else if self.secure_ready() {
-                SetupStatus::Done
-            } else {
-                SetupStatus::Optional
-            },
-        ]
-    }
-
     /// Trusts the CA, then installs the hosts helper, each only if still needed.
     pub fn secure_next(&mut self) {
         self.securing = true;
@@ -105,11 +64,15 @@ impl State {
         }
     }
 
-    pub(super) fn secure_after_trust(&mut self) {
+    pub(super) fn mark_ca_trusted(&mut self) {
         let ca = self.model.status.ca.get_or_insert_with(Ca::default);
         ca.exists = true;
         ca.trusted = true;
         ca.stale = false;
+    }
+
+    pub(super) fn secure_after_trust(&mut self) {
+        self.mark_ca_trusted();
         self.secure_next();
     }
 
@@ -132,6 +95,7 @@ impl State {
     }
 
     pub fn system_failed(&mut self, action: &SystemAction) {
+        self.flow_system_failed(action);
         if self.securing && matches!(action, SystemAction::SetupHosts(_)) {
             self.securing = false;
             if self.link_step() == Some(LinkStep::Secure) {

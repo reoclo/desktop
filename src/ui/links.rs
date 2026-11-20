@@ -60,7 +60,8 @@ impl State {
         self.link.as_ref().map(|pending| pending.step)
     }
 
-    /// A `reoclo://open` link arrived. Nothing happens until the person confirms it.
+    /// A `reoclo://open` link arrived. Nothing happens until the person confirms it, and during
+    /// first run the link waits for Done instead of asking.
     pub fn open_link(&mut self, url: &str) {
         self.page = Page::Tunnels;
         match link::parse(url) {
@@ -68,7 +69,7 @@ impl State {
                 self.error = None;
                 self.close_pickers();
                 self.link = Some(PendingLink::new(link));
-                self.modal = Some("open-link".into());
+                self.modal = (!self.first_run).then(|| "open-link".into());
             }
             Err(error) => self.error = Some(error.to_string()),
         }
@@ -99,12 +100,7 @@ impl State {
         }
         self.modal = None;
         if self.phase == ViewState::Offline {
-            self.link = None;
             self.begin_setup();
-            self.error = Some(
-                "Reoclo's background service is not running. Install it here, then open the link again."
-                    .into(),
-            );
         } else if self.signed_in() {
             self.link_orgs();
         } else {

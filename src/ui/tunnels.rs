@@ -1,25 +1,15 @@
 use super::{State, primitives::*};
-use crate::{model::TunnelState, theme::*};
-use rune::{El, ScrollSpec, col, row, text};
-use rune_kit::{Button, Kit, Table, TableColumn, TableStyle};
+use crate::theme::*;
+use rune::{El, Live, ScrollPos, ScrollSpec, col, el, row, text};
+use rune_kit::{Button, Kit, SortDir, Table, TableColumn, TableStyle};
 
 const HEADER_HEIGHT: f32 = 32.0;
 const ROW_HEIGHT: f32 = 36.0;
-const MAX_VISIBLE_ROWS: usize = 8;
+/// Rows the table keeps when the page is too short for more; the page scrolls instead.
+const MIN_VISIBLE_ROWS: usize = 4;
 
 pub fn view(s: &State, k: &Kit) -> El {
-    let saved = s.model.tunnels.len() + s.model.foreground.len();
-    let active = s
-        .model
-        .tunnels
-        .iter()
-        .filter(|t| t.state == TunnelState::Active)
-        .count()
-        + s.model
-            .foreground
-            .iter()
-            .filter(|t| t.state == TunnelState::Active)
-            .count();
+    let (active, saved) = s.active_count();
     let failed = s.model.tunnels.iter().filter(|t| t.state.failure()).count();
     let mut summary = row().gap(LG).center_y().child(
         text(if s.current_data() {
@@ -80,16 +70,21 @@ pub fn view(s: &State, k: &Kit) -> El {
                 .radius(k.radius.xl),
         );
     }
-    if s.tunnel_row_count() > 0 {
-        body = body.child(table(s, k));
-    } else {
-        body = body.child(
+    let body = col()
+        .w_full()
+        .gap(LG)
+        .child(
+            body.on_layout(|s: &mut State, [_, _, _, height]| s.tunnels_space[1] = height)
+                .key("tunnels-above"),
+        )
+        .child(if s.tunnel_row_count() > 0 {
+            table(s, k)
+        } else {
             text("No tunnels yet. Add a tunnel to reach a service.")
                 .font(BODY)
                 .color(k.c.text_muted)
-                .wrap(),
-        );
-    }
+                .wrap()
+        });
     col()
         .key("tunnels-page")
         .w_full()
@@ -108,6 +103,7 @@ pub fn view(s: &State, k: &Kit) -> El {
                     .scroll(ScrollSpec {
                         stick_bottom: false,
                     })
+                    .on_layout(|s: &mut State, [_, _, _, height]| s.tunnels_space[0] = height)
                     .child(body.pr(LG)),
             ),
         )
@@ -142,47 +138,65 @@ fn table(s: &State, k: &Kit) -> El {
     } else {
         ROW_HEIGHT
     };
-    let mut table = Table::new(
-        |s: &State| &s.table,
-        |s: &mut State| &mut s.table,
-        State::tunnel_row_count,
-        super::tunnel_rows::key,
-    )
-    .name("Tunnels")
-    .style(TableStyle {
+    let mut columns = if narrow {
+        vec![TableColumn::new("compact", "Tunnel").flex(1.0).min(0.0)]
+    } else {
+        vec![
+            TableColumn::new("state", "State")
+                .width(STATE_WIDTH)
+                .sortable(),
+            TableColumn::new("name", "Name")
+                .width(name_width)
+                .sortable(),
+            TableColumn::new("server", "Server")
+                .width(server_width)
+                .sortable(),
+            TableColumn::new("endpoint", "Endpoint")
+                .flex(1.0)
+                .min(ENDPOINT_MIN),
+        ]
+    };
+    columns.push(TableColumn::new("on", "On / Stop").width(ACTION_WIDTH));
+    let style = TableStyle {
         selected: k.c.layer_03,
         row_height,
         header_height: HEADER_HEIGHT,
         header_font: LABEL,
         ..TableStyle::from_kit(k)
-    });
-    if narrow {
-        table = table.column(TableColumn::new("compact", "Tunnel").flex(1.0).min(0.0));
-    } else {
-        table = table
-            .column(
-                TableColumn::new("state", "State")
-                    .width(STATE_WIDTH)
-                    .sortable(),
-            )
-            .column(
-                TableColumn::new("name", "Name")
-                    .width(name_width)
-                    .sortable(),
-            )
-            .column(
-                TableColumn::new("server", "Server")
-                    .width(server_width)
-                    .sortable(),
-            )
-            .column(
-                TableColumn::new("endpoint", "Endpoint")
-                    .flex(1.0)
-                    .min(ENDPOINT_MIN),
-            );
-    }
-    table
-        .column(TableColumn::new("on", "On / Stop").width(ACTION_WIDTH))
+    };
+    // The column header stays above the rows, which scroll on their own below it.
+    let header = columns
+        .iter()
+        .cloned()
+        .fold(
+            Table::new(
+                |s: &State| &s.table,
+                |s: &mut State| &mut s.table,
+                |_: &State| 0,
+                super::tunnel_rows::key,
+            ),
+            Table::column,
+        )
+        .style(style)
+        .on_sort(sort)
+        .build(s, k)
+        .focusable(false)
+        .h(HEADER_HEIGHT)
+        .w_full()
+        .key("tunnels-columns");
+    let rows = columns
+        .into_iter()
+        .fold(
+            Table::new(
+                |s: &State| &s.table,
+                |s: &mut State| &mut s.table,
+                State::tunnel_row_count,
+                super::tunnel_rows::key,
+            ),
+            Table::column,
+        )
+        .name("Tunnels")
+        .style(style)
         .cell(move |s: &State, i, column| {
             if column == "compact" {
                 super::compact_tunnels::cell(s, i, &cell_kit)
@@ -191,22 +205,88 @@ fn table(s: &State, k: &Kit) -> El {
             }
         })
         .on_select(|s: &mut State, name, tx| s.reveal_tunnel(name, tx))
-        .on_sort(|s: &mut State, column, direction, _| {
-            s.model.tunnels.sort_by(|a, b| {
-                direction.apply(match column {
-                    "state" => a.state.label().cmp(b.state.label()),
-                    "server" => a.place().cmp(b.place()),
-                    _ => a.name.cmp(&b.name),
-                })
-            });
-        })
-        .build(s, k)
-        .h(HEADER_HEIGHT
-            + u16::try_from(s.tunnel_row_count().clamp(1, MAX_VISIBLE_ROWS))
-                .map(f32::from)
-                .unwrap_or(8.0)
-                * row_height
-            + RULE)
+        .on_sort(sort)
+        .build(s, k);
+    let content = f32::from(u16::try_from(s.tunnel_row_count()).unwrap_or(u16::MAX)) * row_height;
+    let shown = table_height(s, row_height) - HEADER_HEIGHT;
+    let overflow = content > shown;
+    let thumb = Live::new([0.0; 4]);
+    let follow = thumb.clone();
+    let mut viewport = col()
+        .key("tunnel-rows-scroll")
         .w_full()
+        .h(shown)
+        .scroll(ScrollSpec {
+            stick_bottom: false,
+        })
+        .scroll_margin(LG)
+        .on_scroll_offset(move |at| {
+            follow.set(thumb_rect(at));
+        })
+        // The rows' own copy of the header sits above the scroll's top, out of sight.
+        .child(
+            col().w_full().h(content).child(
+                rows.h(HEADER_HEIGHT + content)
+                    .mt(-HEADER_HEIGHT)
+                    .w_full()
+                    .key("table"),
+            ),
+        );
+    let mut area = col().key("tunnel-rows").w_full().h(shown);
+    if overflow {
+        viewport = viewport.scroll_edge_fade(XL);
+        area = area.child(viewport).child(
+            el().key("tunnels-scroll-thumb")
+                .absolute(0.0, 0.0)
+                .live_rect(&thumb)
+                .radius(XS / 2.0)
+                .fill(k.c.border_strong)
+                .a11y_hidden(),
+        );
+    } else {
+        area = area.child(viewport);
+    }
+    col()
         .key("saved-tunnels")
+        .w_full()
+        .child(header)
+        .child(area)
+}
+
+fn sort(s: &mut State, column: &str, direction: SortDir, _: &mut rune::Tx) {
+    s.model.tunnels.sort_by(|a, b| {
+        direction.apply(match column {
+            "state" => a.state.label().cmp(b.state.label()),
+            "server" => a.place().cmp(b.place()),
+            _ => a.name.cmp(&b.name),
+        })
+    });
+}
+
+/// The scroll thumb, shown at rest while the rows overflow: as long as the share of rows in view.
+fn thumb_rect(at: ScrollPos) -> [f32; 4] {
+    let [width, height] = at.viewport;
+    let max = at.max[1];
+    if max <= 0.0 {
+        return [0.0; 4];
+    }
+    let track = height - XS * 2.0;
+    let length = (track * height / (height + max)).max(XL);
+    let top = XS + (track - length) * (at.offset[1] / max).clamp(0.0, 1.0);
+    [width - XS * 2.0, top, XS, length]
+}
+
+/// Every row when they fit below the details and graph, otherwise as many whole rows as fit,
+/// so the table fills the page and scrolls inside itself only when its rows exceed it.
+fn table_height(s: &State, row_height: f32) -> f32 {
+    let [page, above] = s.tunnels_space;
+    let count = |rows: usize| f32::from(u16::try_from(rows).unwrap_or(u16::MAX));
+    let rows = count(s.tunnel_row_count());
+    let room = ((page - above - LG - HEADER_HEIGHT - RULE) / row_height).floor();
+    let shown = if rows <= room {
+        rows
+    } else {
+        room.max(count(MIN_VISIBLE_ROWS).min(rows))
+    };
+    HEADER_HEIGHT + shown * row_height + RULE
 }

@@ -11,7 +11,7 @@ fn click(rt: &mut Runtime<State>, key: &str) {
 #[test]
 fn pause_freezes_the_filtered_view_while_live_events_continue() {
     let mut state = State::fixture("logs", "loaded").unwrap();
-    state.logs.tunnel = TextEdit::new("grafana");
+    state.logs.tunnel = "grafana".into();
     let mut rt = Runtime::new(state, view, (1100.0, 760.0), Env::new(false, 1.0));
     rt.frame(0.0);
     click(&mut rt, "pause-logs");

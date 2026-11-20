@@ -1,4 +1,7 @@
-use super::{SystemAction, SystemRunner};
+use super::{
+    SystemAction, SystemRunner,
+    command_path::{self, CommandPaths},
+};
 use crate::{cli::Locator, ui::State};
 use rune::AppHandle;
 use std::path::PathBuf;
@@ -15,32 +18,7 @@ pub fn start(
             for handle in &handles {
                 let result = result.clone();
                 let action = action.clone();
-                handle.update(move |s, _| {
-                    s.busy = false;
-                    match result {
-                        Ok(message) => {
-                            s.modal = None;
-                            if let SystemAction::StartAtLogin(enabled) = action {
-                                s.start_at_login = enabled;
-                            }
-                            if action == SystemAction::InstallDaemon {
-                                s.service_installed_ok();
-                            }
-                            if matches!(action, SystemAction::SetupHosts(_)) {
-                                // The helper's own answer decides what the app reports.
-                                s.request("POST", "/v1/hosts/sync", None);
-                                s.awaiting_helper = true;
-                            } else {
-                                s.request("GET", "/v1/status", None);
-                                s.notice = Some(message);
-                            }
-                        }
-                        Err(message) => {
-                            s.error = Some(message);
-                            s.system_failed(&action);
-                        }
-                    }
-                });
+                handle.update(move |s, _| s.system_finished(&action, result));
             }
         }
     });
@@ -86,6 +64,38 @@ pub fn find_cli(locator: Locator, handles: Vec<AppHandle<State>>) -> Sender<Opti
                         }
                     }
                 });
+            }
+        }
+    });
+    sender
+}
+
+/// What the Tools step asks of the agent command.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandRequest {
+    Install,
+    Remove,
+}
+
+/// Links or unlinks the agent command off the main thread, since the shell lookup starts a login shell.
+pub fn start_command(
+    paths: CommandPaths,
+    handles: Vec<AppHandle<State>>,
+) -> Sender<CommandRequest> {
+    let (sender, receive) = mpsc::channel::<CommandRequest>();
+    std::thread::spawn(move || {
+        for request in receive {
+            let state = match request {
+                CommandRequest::Install => command_path::install(
+                    &paths,
+                    || command_path::lookup(&paths.home),
+                    crate::cli::version_of,
+                ),
+                CommandRequest::Remove => command_path::remove(&paths),
+            };
+            for handle in &handles {
+                let state = state.clone();
+                handle.update(move |s, _| s.command_finished(state));
             }
         }
     });

@@ -3,6 +3,9 @@ use crate::theme::*;
 use rune::{El, col, el, row, text};
 use rune_kit::Kit;
 
+mod setup;
+pub use setup::first_run;
+
 fn bar(k: &Kit, height: f32) -> El {
     el().w_full()
         .h(height)
@@ -12,7 +15,34 @@ fn bar(k: &Kit, height: f32) -> El {
 }
 
 pub fn view(s: &State, k: &Kit) -> El {
-    if s.modal.is_some() || s.panel {
+    if s.panel {
+        // One-line rows on the panel's row grid, so the list does not move when tunnels
+        // arrive. Five rows keep the fitted panel near a typical list's height.
+        return col()
+            .key("loading-state")
+            .role("status")
+            .label("Loading tunnel data")
+            .w_full()
+            .px(LG)
+            .py(SM)
+            .children((0..5).map(|_| {
+                row()
+                    .w_full()
+                    .h(PANEL_ROW)
+                    .gap(SM)
+                    .center_y()
+                    .child(bar(k, SM).w(SM))
+                    .child(bar(k, LG).w(PANEL_NAME - LG))
+                    .child(bar(k, LG).grow(1.0).mx(XS))
+                    .child(
+                        row()
+                            .w(PANEL_ACTION)
+                            .justify_end()
+                            .child(bar(k, LG).w(XXL + XS)),
+                    )
+            }));
+    }
+    if s.modal.is_some() {
         let mut body = col()
             .key("loading-state")
             .role("status")
@@ -37,6 +67,7 @@ pub fn view(s: &State, k: &Kit) -> El {
         .label(format!("Loading {}", s.page.name()))
         .w_full()
         .max_w(CONTENT_MAX)
+        .h_full()
         .padding(if s.compact { LG } else { XL })
         .gap(if s.page == Page::Tunnels { LG } else { XL });
     body = body.child(if s.page == Page::Tunnels {
@@ -80,15 +111,19 @@ pub fn view(s: &State, k: &Kit) -> El {
                     )
                     .child(bar(k, CONTROL));
             }
+            // The table fills the rest of the page, as the loaded table does.
             layout
                 .child(bar(k, XL))
                 .child(bar(k, GRAPH_HEIGHT))
                 .child(bar(k, LG))
                 .child(
                     col()
-                        .gap(0.0)
+                        .grow(1.0)
+                        .min_h(0.0)
+                        .clip_soft(0.0)
+                        .gap(RULE)
                         .child(bar(k, XXL))
-                        .children((0..4).map(|_| bar(k, row_height))),
+                        .children((0..24).map(|_| bar(k, row_height - RULE))),
                 )
         }
         Page::Hosts => col()
@@ -132,17 +167,26 @@ pub fn view(s: &State, k: &Kit) -> El {
         Page::Logs => col()
             .gap(LG)
             .child(
-                col()
-                    .equal_columns(if s.compact { 1 } else { 2 })
-                    .gap(SM)
-                    .child(bar(k, CONTROL))
-                    .child(bar(k, CONTROL)),
+                (if s.viewport_width < NARROW_WIDTH {
+                    col()
+                } else {
+                    row()
+                })
+                .w_full()
+                .gap(SM)
+                .child(bar(k, CONTROL).w(MENU_WIDTH).shrink().min_w(0.0))
+                .child(bar(k, CONTROL).grow(1.0)),
             )
             .child(bar(k, CONTROL))
             .child(bar(k, LOG_ROW_HEIGHT * 12.0)),
     };
     body = body
-        .child(layout.pr(if s.page == Page::Tunnels { LG } else { 0.0 }))
+        .child(if s.page == Page::Tunnels {
+            // The table fills the page, so its skeleton does too.
+            layout.grow(1.0).min_h(0.0).pr(LG)
+        } else {
+            layout
+        })
         .child(
             text("Reading the local daemon.")
                 .font(LABEL)

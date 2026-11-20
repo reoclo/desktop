@@ -1,11 +1,11 @@
 mod selectors;
 use super::modal::Dialog;
-use super::{State, ViewState, primitives::*};
+use super::{PortsScan, State, ViewState, primitives::*};
 use crate::{control::segment, theme::*};
 use rune::{El, ScrollSpec, col, el, row, text};
 use rune_kit::{Button, Combobox, ComboboxOption, Kit, Select, SelectAppearance, TextInput};
 pub(super) mod actions;
-mod controls;
+pub(super) mod controls;
 use actions::{hostname, save};
 use controls::{Picker, label, options, picker};
 
@@ -53,6 +53,7 @@ pub fn sheet(s: &State, k: &Kit, layer: &mut Vec<El>) {
                 options: &options(domains),
                 current: Some(current_domain.as_str()),
                 disabled: false,
+                width: FORM_COLUMN,
             },
             &s.domain_picker,
             |s: &mut State| &mut s.domain_picker,

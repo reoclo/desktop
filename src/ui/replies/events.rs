@@ -13,12 +13,17 @@ impl State {
                     self.error = None;
                     self.model.status.signed_in = Some(true);
                     self.link_signed_in();
+                    self.login_approved();
                 }
-                "pending" => self.phase = ViewState::SignedOut,
+                "pending" => {
+                    self.phase = ViewState::SignedOut;
+                    self.login_code_arrived();
+                }
                 "failed" => {
                     self.phase = ViewState::SignedOut;
                     self.error = self.model.auth.message.clone();
                     self.link = None;
+                    self.login_refused();
                 }
                 _ => {}
             },
