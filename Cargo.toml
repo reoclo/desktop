@@ -3,7 +3,10 @@ name = "reoclo-desktop"
 version = "0.4.2"
 edition = "2024"
 license = "MIT"
-description = "Reoclo tunnel daemon desktop client"
+description = "Reoclo for macOS: manage Reoclo tunnels, local HTTPS and hostnames from the menu bar"
+repository = "https://github.com/reoclo/desktop"
+homepage = "https://reoclo.com"
+publish = false
 
 [dependencies]
 rune = { git = "https://github.com/anomalyco/rune", rev = "78efd4a7876b5478dd72033ce6fd2b2f13ab9f9a" }

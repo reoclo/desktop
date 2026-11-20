@@ -2,7 +2,7 @@
 
 Mode: Operate. Preserve the dashboard's Survey Sheet design.
 
-The supplied dashboard design system and its Button, Input, Table, StatusBadge, InfoField and PageHeader components are the visual authority. The desktop translates their semantic tokens into Rune, rather than treating the native app as a website.
+The Reoclo web dashboard's design system and its Button, Input, Table, StatusBadge, InfoField and PageHeader components are the visual authority. The desktop translates their semantic tokens into Rune, rather than treating the native app as a website.
 
 - Light: paper background, deeper paper sidebar, ink foreground. Dark: night chart background with warm light foreground.
 - One-pixel rules separate surfaces. No shadows. Corners use 2, 3 and 4 point radii.
