@@ -4,6 +4,6 @@ Reoclo for macOS is a thin client for the Reoclo tunnel daemon on a Mac. DevOps 
 
 The primary action is bringing a saved tunnel up. The daemon owns credentials, configuration, networking, certificate material, and privileged operations. The desktop owns presentation and user intent.
 
-Builds are signed ad hoc until Developer ID signing and notarization are set up.
+Releases are signed with a Developer ID and notarized by Apple.
 
 Development and the test suite use a fake daemon. Nothing in them starts a real tunnel, installs a system helper, changes the keychain or registers a login item.

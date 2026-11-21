@@ -19,7 +19,7 @@ bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString'
 archive="dist/Reoclo-$version.app.tar.gz"
 cp dist/Reoclo.dmg "dist/Reoclo-$version.dmg"
 COPYFILE_DISABLE=1 tar -czf "$archive" -C dist Reoclo.app
-printf 'Reoclo %s for macOS.\n\nIncludes Reoclo CLI %s. Existing CLI installations remain preferred.\n\nThe app is not notarized yet, so macOS blocks it on first open. Open System Settings, go to Privacy and Security, and choose Open Anyway next to the message about Reoclo.\n' \
+printf 'Reoclo %s for macOS.\n\nIncludes Reoclo CLI %s. Existing CLI installations remain preferred.\n\nSigned with a Developer ID and notarized by Apple, so macOS opens it without an Open Anyway step.\n' \
   "$version" "$cli_version" > dist/release-notes.txt
 base="${REOCLO_RELEASE_BASE_URL:-https://github.com/reoclo/desktop/releases/download/v$version}"
 set -- "$archive" "$version" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \

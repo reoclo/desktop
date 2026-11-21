@@ -78,7 +78,7 @@ You need macOS 13 or later and a [Reoclo](https://reoclo.com) account. You can c
 
 ## Install
 
-Download the disk image from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is not notarized yet, so macOS blocks it the first time you open it. Open **System Settings**, go to **Privacy & Security**, and choose **Open Anyway** next to the message about Reoclo, then confirm with your password. You only do this once.
+Download the disk image from [GitHub Releases](https://github.com/reoclo/desktop/releases/latest), open it, and drag Reoclo to Applications. The app supports Apple Silicon and Intel Macs. It is signed with a Developer ID and notarized by Apple, so it opens like any other Mac app.
 
 ## First run
 
@@ -202,13 +202,15 @@ After a UI change, `bash scripts/readme-images.sh` renders the screenshots in th
 
 ### Packaging
 
-`scripts/bundle-macos.sh /path/to/reoclo` builds `dist/Reoclo.app` with that CLI binary inside, signs both ad hoc, verifies the signature and writes `dist/Reoclo.dmg`. Pass a prebuilt desktop binary as a second argument to package a universal build. The script neither installs nor launches the app, and it never fetches or substitutes a CLI. The disk image window is built with `dmgbuild` through `uvx`; its background comes from `assets/dmg/background.html`.
+`scripts/bundle-macos.sh /path/to/reoclo` builds `dist/Reoclo.app` with that CLI binary inside, signs both with the hardened runtime, verifies the signature and writes `dist/Reoclo.dmg`. Local builds are signed ad hoc. Set `REOCLO_SIGN_IDENTITY` to a Developer ID Application identity to sign with it and a secure timestamp, and the disk image is signed too; `REOCLO_SIGN_KEYCHAIN` names the keychain that holds it. `scripts/notarize-macos.sh` then submits the disk image to Apple's notary service with the App Store Connect API key file in `ASC_KEY_PATH` and its ids in `ASC_KEY_ID` and `ASC_ISSUER_ID`. It staples the ticket to the disk image and the app, and fails unless Gatekeeper accepts the app as notarized. Pass a prebuilt desktop binary as a second argument to package a universal build. The script neither installs nor launches the app, and it never fetches or substitutes a CLI. The disk image window is built with `dmgbuild` through `uvx`; its background comes from `assets/dmg/background.html`.
 
 ### Releases
 
 The private Gitea repository mirrors branches and tags to `reoclo/desktop` on GitHub. Pushing a tag such as `v0.5.0` runs [.github/workflows/release.yml](.github/workflows/release.yml) on a macOS GitHub runner. The tag must match the Cargo package version. You can also dispatch the workflow with an existing tag.
 
-The workflow builds both Mac architectures and combines them with `lipo`. It fetches the latest released CLI binaries and verifies their published checksums before making a universal CLI. The release notes record the CLI version. `scripts/package-release.sh` packages the signed app with permissions and symlinks intact and runs `update-sign` to write `latest.json`.
+The workflow builds both Mac architectures and combines them with `lipo`. It fetches the latest released CLI binaries and verifies their published checksums before making a universal CLI. The release notes record the CLI version. It imports the Developer ID Application certificate of BOXMARSHALL LTD (team `2446T6MBQU`) into a temporary keychain, signs the bundle with it and notarizes the disk image before packaging, so the download and the update archive both carry the stapled ticket. `scripts/package-release.sh` packages the signed app with permissions and symlinks intact and runs `update-sign` to write `latest.json`.
+
+`MACOS_DEVELOPER_ID_P12` is a GitHub Actions secret holding that certificate and its private key as a base64 `.p12`, with its password in `MACOS_DEVELOPER_ID_P12_PASSWORD`. The App Store Connect API key used for notarization is `ASC_API_KEY_P8`, with its ids in `ASC_API_KEY_ID` and `ASC_API_ISSUER_ID`. A release fails rather than publish an unsigned build when they are missing.
 
 `UPDATE_SIGNING_KEY` is a GitHub Actions secret containing the base64 raw 32-byte Ed25519 seed. The signer checks that it matches `assets/update-public-key.txt`. The app embeds only that public key. `update-sign --test-key` accepts a throwaway seed for local packaging exercises; it does not change the app's trusted key. For development, `REOCLO_UPDATE_URL` overrides the manifest endpoint. HTTPS is required except on loopback.
 
@@ -231,7 +233,7 @@ The visual contract is in [DESIGN.md](DESIGN.md), and the product scope in [PROD
 
 ## Status
 
-Builds are signed ad hoc. GitHub Releases provides the downloads. Developer ID signing and notarization are not set up yet.
+Releases are signed with a Developer ID and notarized by Apple. GitHub Releases provides the downloads.
 
 ## License
 

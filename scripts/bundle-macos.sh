@@ -30,12 +30,30 @@ cp assets/Info.plist "$app/Contents/Info.plist"
 cp assets/Reoclo.icns "$app/Contents/Resources/Reoclo.icns"
 cp assets/fonts/OFL-*.txt "$app/Contents/Resources/"
 plutil -lint "$app/Contents/Info.plist"
-codesign --force --sign - "$app/Contents/Resources/reoclo"
-codesign --force --sign - "$app"
+# Releases set REOCLO_SIGN_IDENTITY to the Developer ID (and REOCLO_SIGN_KEYCHAIN to its
+# keychain); local builds sign ad hoc. Both use the hardened runtime, so a local build
+# catches anything that would break under notarization.
+identity="${REOCLO_SIGN_IDENTITY:--}"
+sign=(codesign --force --sign "$identity")
+if [[ "$identity" == - ]]; then
+  sign+=(--timestamp=none)
+else
+  sign+=(--timestamp)
+fi
+if [[ -n "${REOCLO_SIGN_KEYCHAIN:-}" ]]; then
+  sign+=(--keychain "$REOCLO_SIGN_KEYCHAIN")
+fi
+# Nested code is signed before the bundle that seals it.
+"${sign[@]}" --options runtime --identifier com.reoclo.cli \
+  --entitlements assets/cli.entitlements "$app/Contents/Resources/reoclo"
+"${sign[@]}" --options runtime "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 rm -rf dist/Reoclo.app
 ditto "$app" dist/Reoclo.app
 rm -f dist/Reoclo.dmg
 uvx --from 'dmgbuild==1.6.7' dmgbuild -s assets/dmg/settings.py -D app="$app" Reoclo dist/Reoclo.dmg
+if [[ "$identity" != - ]]; then
+  "${sign[@]}" dist/Reoclo.dmg
+fi
 shasum -a 256 dist/Reoclo.dmg
 printf 'BUNDLE PASS: %s/dist/Reoclo.app\nDMG PASS: %s/dist/Reoclo.dmg\n' "$PWD" "$PWD"

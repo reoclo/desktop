@@ -18,9 +18,10 @@ concurrency:
 jobs:
   release:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
+      APPLE_TEAM_ID: 2446T6MBQU
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       MACOSX_DEPLOYMENT_TARGET: "13.0"
       CARGO_BUILD_JOBS: "3"
@@ -69,14 +70,52 @@ jobs:
           lipo -create reoclo-darwin-arm64 reoclo-darwin-x64 -output ../reoclo-universal
           lipo ../reoclo-universal -verify_arch arm64 x86_64
           echo "CLI_VERSION=$cli_tag" >> "$GITHUB_ENV"
-      - name: Bundle and sign update archive
+      - name: Import Developer ID certificate
+        shell: bash
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "$DEVELOPER_ID_P12" && -n "$DEVELOPER_ID_P12_PASSWORD" ]] || { echo "Developer ID secrets are missing" >&2; exit 1; }
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -hex 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign -f pkcs12
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          search=("$keychain")
+          while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            search+=("${line//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${search[@]}"
+          identity="Developer ID Application: BOXMARSHALL LTD ($APPLE_TEAM_ID)"
+          security find-identity -v -p codesigning "$keychain" | grep -F "\"$identity\""
+          echo "REOCLO_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "REOCLO_SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Bundle with Developer ID
+        shell: bash
+        run: scripts/bundle-macos.sh "$PWD/dist/reoclo-universal" "$PWD/dist/reoclo-desktop-universal"
+      - name: Notarize and staple
+        shell: bash
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          export ASC_KEY_PATH="$RUNNER_TEMP/notary-key.p8"
+          (umask 077; printf '%s\n' "$ASC_API_KEY_P8" > "$ASC_KEY_PATH")
+          bash scripts/notarize-macos.sh
+      - name: Package and sign update archive
         shell: bash
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: |
-          set -euo pipefail
-          scripts/bundle-macos.sh "$PWD/dist/reoclo-universal" "$PWD/dist/reoclo-desktop-universal"
-          bash scripts/package-release.sh "$VERSION" "$CLI_VERSION" "$PWD/target/release/update-sign"
+        run: bash scripts/package-release.sh "$VERSION" "$CLI_VERSION" "$PWD/target/release/update-sign"
       - name: Publish release
         shell: bash
         run: |
@@ -85,3 +124,12 @@ jobs:
             --title "Reoclo $VERSION" --notes-file dist/release-notes.txt --draft \
             "dist/Reoclo-$VERSION.dmg" "dist/Reoclo-$VERSION.app.tar.gz" dist/latest.json
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$RUNNER_TEMP/notary-key.p8" "$RUNNER_TEMP/developer-id.p12"
+          if [[ -n "${REOCLO_SIGN_KEYCHAIN:-}" && -f "$REOCLO_SIGN_KEYCHAIN" ]]; then
+            security delete-keychain "$REOCLO_SIGN_KEYCHAIN"
+          fi
