@@ -122,7 +122,7 @@ cp -R dist/Reoclo.app /Applications/
 open /Applications/Reoclo.app
 ```
 
-The app is signed ad hoc, and `dist/Reoclo.dmg` holds the same app.
+A build from source is signed ad hoc instead of with the Developer ID, which macOS accepts on the Mac that built it. `dist/Reoclo.dmg` holds the same app.
 
 ## How it works
 
@@ -137,6 +137,8 @@ Start at login writes only the app's own launch agent and applies at the next ma
 ## Updates
 
 Reoclo checks GitHub Releases after launch and every 6 hours. It downloads newer versions in the background and verifies the archive's SHA-256 and Ed25519 signature against the key embedded in the app. Settings shows the last check and offers **Check now**. Turn off **Automatic checks** to check manually.
+
+From 0.9.0 every release is signed with the Developer ID and notarized by Apple, and the update archive carries the same stapled app as the download. Installed copies from 0.5.0 on reach a notarized release through the updater, with no reinstall.
 
 When an update is verified, choose **Restart to update** in Settings or **Restart** in the menu-bar panel. Reoclo never restarts on its own. It checks the extracted bundle version and stages the replacement on the app's volume. After the current process exits, it swaps the bundles and opens the new copy. If opening fails, it restores the previous app. Your tunnels keep running.
 
