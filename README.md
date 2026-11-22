@@ -57,4 +57,4 @@ The first time Reoclo opens, a short setup signs you in and prepares this Mac an
 
 ## License
 
-[MIT](LICENSE). The bundled fonts are under the SIL Open Font License 1.1, with their licenses in [assets/fonts](assets/fonts).
+[Apache-2.0](LICENSE), with attributions in [NOTICE](NOTICE). The bundled fonts are under the SIL Open Font License 1.1, with their licenses in [assets/fonts](assets/fonts).
